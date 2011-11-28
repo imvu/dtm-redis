@@ -1,18 +1,18 @@
 -module(session).
--export([start/2]).
+-export([start/3]).
 
 -include("protocol.hrl").
 
 -record(transaction, {current, buckets}).
--record(state, {buckets, transaction=none, watches=none}).
+-record(state, {buckets, monitor, transaction=none, watches=none}).
 
-start(shell, BucketMap) ->
+start(shell, BucketMap, MonitorMap) ->
     io:format("starting shell session with pid ~p~n", [self()]),
-    loop(shell, #state{buckets=BucketMap});
-start(Client, BucketMap) ->
+    loop(shell, #state{buckets=BucketMap, monitor=MonitorMap});
+start(Client, BucketMap, MonitorMap) ->
     {ok, {Addr, Port}} = inet:peername(Client),
     io:format("starting client session with pid ~p and remote connection ~p:~p~n", [self(), inet_parse:ntoa(Addr), Port]),
-    loop(Client, #state{buckets=BucketMap}),
+    loop(Client, #state{buckets=BucketMap, monitor=MonitorMap}),
     gen_tcp:close(Client).
 
 loop(Client, State) ->
