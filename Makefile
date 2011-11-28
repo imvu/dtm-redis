@@ -22,5 +22,6 @@ clean:
 debug: compile
 	${ERL} -s eredis start
 
-test:
-	echo ${SOURCES}
+test: compile
+	erl -noshell -pa hash -eval 'eunit:test(hash,[verbose])' -s init stop
+
