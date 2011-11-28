@@ -40,7 +40,7 @@ unlock(#data{}=Data) ->
 
 is_watched(undefined) ->
     false;
-is_watched(#data{watches=Watches}=Data) ->
+is_watched(#data{watches=Watches}) ->
     Watches =:= 0.
 
 watch(undefined) ->
