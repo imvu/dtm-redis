@@ -24,6 +24,6 @@ debug: compile
 
 test: compile
 	erl -noshell -pa hash -eval 'eunit:test(hash,[verbose])' -s init stop
-	erl -noshell -pa hash -eval 'eunit:test(txn_monitor,[verbose])' -s init stop
-	erl -noshell -pa hash -eval 'acceptance:test()' -s init stop
+	erl -noshell -pa txn_monitor -eval 'eunit:test(txn_monitor,[verbose])' -s init stop
+	erl -noshell -pa acceptance -eval 'acceptance:test()' -s init stop
 
