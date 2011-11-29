@@ -2,7 +2,7 @@
 -export([is_power_of_two/1, bits/1, worker_for_key/2]).
 -compile(export_all).
 
--include("eredis.hrl").
+-include("dtm_redis.hrl").
 
 -include_lib("eunit/include/eunit.hrl").
 

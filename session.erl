@@ -33,7 +33,7 @@ loop(Client, State) ->
         {From, Key, Operation} ->
             loop(Client, handle_operation(State, From, Key, Operation));
         stop ->
-            io:format("eredis shell halting after receiving stop message~n");
+            io:format("dtm-redis shell halting after receiving stop message~n");
         Any ->
             io:format("session received message ~p~n", [Any]),
             loop(Client, State)

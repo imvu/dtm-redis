@@ -1,10 +1,10 @@
 -module(server).
 -export([start/2]).
 
--include("eredis.hrl").
+-include("dtm_redis.hrl").
 
 start(Config, BucketMap) ->
-    io:format("starting eredis server with pid ~p and ~p buckets~n", [self(), dict:size(BucketMap#buckets.map)]),
+    io:format("starting dtm-redis server with pid ~p and ~p buckets~n", [self(), dict:size(BucketMap#buckets.map)]),
     {ok, Listen} = gen_tcp:listen(Config#config.port, [binary, {backlog, Config#config.backlog}, {active, true}|iface(Config)]),
     loop(Listen, BucketMap).
 

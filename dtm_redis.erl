@@ -1,9 +1,9 @@
--module(eredis).
+-module(dtm_redis).
 -export([start/0, start/1]).
 -export([get/1, set/2, delete/1]).
 -export([watch/1, unwatch/0, multi/0, exec/0]).
 
--include("eredis.hrl").
+-include("dtm_redis.hrl").
 -include("protocol.hrl").
 
 start() ->

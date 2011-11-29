@@ -20,7 +20,7 @@ clean:
 	${RM} *.beam
 
 debug: compile
-	${ERL} -s eredis start
+	${ERL} -s dtm_redis start
 
 test: compile
 	erl -noshell -pa hash -eval 'eunit:test(hash,[verbose])' -s init stop

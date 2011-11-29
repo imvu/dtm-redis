@@ -3,8 +3,8 @@
 -compile(export_all).
 
 test() ->
-    io:format("Starting eredis acceptance tests~n"),
-    eredis:start(),
+    io:format("Starting dtm-redis acceptance tests~n"),
+    dtm_redis:start(),
     test_get_set(),
     test_delete(),
     test_transaction(),
@@ -14,45 +14,45 @@ test() ->
 
 test_get_set() ->
     io:format("### beginning test_get_set~n"),
-    ok = eredis:set(foo, bar),
-    {ok, bar} = eredis:get(foo),
+    ok = dtm_redis:set(foo, bar),
+    {ok, bar} = dtm_redis:get(foo),
     io:format("test_get_set passed ###~n").
 
 test_delete() ->
     io:format("### beginning test_delete~n"),
-    ok = eredis:set(foo, bar),
-    ok = eredis:delete(foo),
-    undefined = eredis:get(foo),
+    ok = dtm_redis:set(foo, bar),
+    ok = dtm_redis:delete(foo),
+    undefined = dtm_redis:get(foo),
     io:format("test_delete passed ###~n").
 
 test_transaction() ->
     io:format("### beginning test_transaction~n"),
-    ok = eredis:set(foo, baz),
-    ok = eredis:multi(),
-    stored = eredis:get(foo),
-    stored = eredis:set(foo, bar),
-    {ok, [{ok, baz}, ok]} = eredis:exec(),
-    {ok, bar} = eredis:get(foo),
+    ok = dtm_redis:set(foo, baz),
+    ok = dtm_redis:multi(),
+    stored = dtm_redis:get(foo),
+    stored = dtm_redis:set(foo, bar),
+    {ok, [{ok, baz}, ok]} = dtm_redis:exec(),
+    {ok, bar} = dtm_redis:get(foo),
     io:format("test_transaction passed ###~n").
 
 test_watch() ->
     io:format("### beginning test_watch~n"),
-    ok = eredis:watch(foo),
-    ok = eredis:set(foo, baz),
-    ok = eredis:multi(),
-    stored = eredis:set(foo, bar),
-    error = eredis:exec(),
-    {ok, baz} = eredis:get(foo),
+    ok = dtm_redis:watch(foo),
+    ok = dtm_redis:set(foo, baz),
+    ok = dtm_redis:multi(),
+    stored = dtm_redis:set(foo, bar),
+    error = dtm_redis:exec(),
+    {ok, baz} = dtm_redis:get(foo),
     io:format("test_watch passed ###~n").
 
 test_unwatch() ->
     io:format("### beginning test_unwatch~n"),
-    ok = eredis:watch(foo),
-    ok = eredis:set(foo, baz),
-    ok = eredis:unwatch(),
-    ok = eredis:multi(),
-    stored = eredis:set(foo, bar),
-    {ok, [ok]} = eredis:exec(),
-    {ok, bar} = eredis:get(foo),
+    ok = dtm_redis:watch(foo),
+    ok = dtm_redis:set(foo, baz),
+    ok = dtm_redis:unwatch(),
+    ok = dtm_redis:multi(),
+    stored = dtm_redis:set(foo, bar),
+    {ok, [ok]} = dtm_redis:exec(),
+    {ok, bar} = dtm_redis:get(foo),
     io:format("test_unwatch passed ###~n").
 
