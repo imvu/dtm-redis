@@ -1,6 +1,3 @@
--record(allocate_txn, {from}).
--record(txn_id, {monitor, id}).
-
 -record(command, {session, operation}).
 -record(transact, {session, id, operation}).
 -record(watch, {session, key}).
