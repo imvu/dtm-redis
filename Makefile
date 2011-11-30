@@ -25,5 +25,6 @@ debug: compile
 test: compile
 	erl -noshell -pa lib/eredis/ebin/ -eval 'eunit:test(hash,[verbose])' -s init stop
 	erl -noshell -pa lib/eredis/ebin/ -eval 'eunit:test(txn_monitor,[verbose])' -s init stop
+	erl -noshell -pa lib/eredis/ebin/ -eval 'eunit:test(binlog,[verbose])' -s init stop
 	erl -noshell -pa lib/eredis/ebin/ -eval 'acceptance:test()' -s init stop
 
