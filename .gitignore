@@ -1,0 +1,6 @@
+# Compiled erlang binaries
+*.beam
+
+# Crash dump file
+*.dump
+
