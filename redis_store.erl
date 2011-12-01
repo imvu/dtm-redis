@@ -1,63 +1,50 @@
 -module(redis_store).
 -export([connect/2]).
--export([get/3, set/4]). %, delete/3]).
+-export([get/2, get/3, set/3, set/4]). %, delete/3]).
 -export([pipeline/1, transaction/1, commit/2]).
 -compile(export_all).
 
 -include("store.hrl").
 
--record(connection, {client, state, stored}).
+-record(default, {client}).
+-record(transaction, {client, stored=[]}).
+-record(pipeline, {client, stored=[]}).
 
 -include_lib("eunit/include/eunit.hrl").
 
 connect(Host, Port) ->
     {ok, Client} = eredis:start_link(Host, Port),
-    #connection{client=Client, state=default, stored=[]}.
+    #default{client=Client}.
 
-get(Id, #connection{}=Connection, Key) ->
-    handle_command(Id, Connection, ["GET", Key]).
+get_command(Key) ->
+    ["GET", Key].
 
-set(Id, #connection{}=Connection, Key, Value) ->
-    handle_command(Id, Connection, ["SET", Key, Value]).
+get(Id, #default{client=Client}, Key) ->
+    dispatch_command(Id, Client, get_command(Key)).
 
-transaction(#connection{state=State}=Connection) ->
-    case State of
-        default -> Connection#connection{state=transaction}
-    end.
+get(#transaction{}=State, Key) ->
+    store_command(State, get_command(Key));
+get(#pipeline{}=State, Key) ->
+    store_command(State, get_command(Key)).
 
-pipeline(#connection{state=State}=Connection) ->
-    case State of
-        default -> Connection#connection{state=pipeline}
-    end.
+set_command(Key, Value) ->
+    ["SET", Key, Value].
 
-commit(Id, #connection{state=State}=Connection) ->
-    case State of
-        transaction -> dispatch_transaction(Id, Connection);
-        pipeline -> dispatch_pipeline(Id, Connection)
-    end,
-    Connection#connection{state=default, stored=[]}.
+set(Id, #default{client=Client}, Key, Value) ->
+    dispatch_command(Id, Client, set_command(Key, Value)).
 
-handle_command(Id, #connection{client=Client, state=State, stored=Stored}=Connection, Command) ->
-    case State of
-        default ->
-            dispatch_command(Id, Client, Command),
-            Connection;
-        transaction ->
-            Connection#connection{stored=[Command|Stored]};
-        pipeline ->
-            Connection#connection{stored=[Command|Stored]}
-    end.
+set(#transaction{}=State, Key, Value) ->
+    store_command(State, set_command(Key, Value));
+set(#pipeline{}=State, Key, Value) ->
+    store_command(State, set_command(Key, Value)).
 
-dispatch_command(Id, Client, Command) ->
-    Parent = self(),
-    spawn(fun() -> Result = eredis:q(Client, Command), Parent ! #store_result{id=Id, result=Result} end).
+transaction(#default{client=Client}) ->
+    #transaction{client=Client}.
 
-dispatch_pipeline(Id, #connection{client=Client, state=pipeline, stored=Commands}) ->
-    Parent = self(),
-    Ordered = lists:reverse(Commands),
-    spawn(fun() -> Result = eredis:qp(Client, Ordered), Parent ! #store_result{id=Id, result=Result} end).
+pipeline(#default{client=Client}) ->
+    #pipeline{client=Client}.
 
-dispatch_transaction(Id, #connection{client=Client, state=transaction, stored=Commands}) ->
+commit(Id, #transaction{client=Client, stored=Commands}) ->
     Parent = self(),
     Ordered = lists:reverse(Commands),
     spawn(fun() ->
@@ -65,28 +52,41 @@ dispatch_transaction(Id, #connection{client=Client, state=transaction, stored=Co
         lists:foreach(fun(Command) -> {ok, <<"QUEUED">>} = eredis:q(Client, Command) end, Ordered),
         Result = eredis:q(Client, ["EXEC"]),
         Parent ! #store_result{id=Id, result=Result}
-    end).
+    end);
+commit(Id, #pipeline{client=Client, stored=Commands}) ->
+    Parent = self(),
+    Ordered = lists:reverse(Commands),
+    spawn(fun() -> Result = eredis:qp(Client, Ordered), Parent ! #store_result{id=Id, result=Result} end).
+
+dispatch_command(Id, Client, Command) ->
+    Parent = self(),
+    spawn(fun() -> Result = eredis:q(Client, Command), Parent ! #store_result{id=Id, result=Result} end).
+
+store_command(#transaction{stored=Stored}=Transaction, Command) ->
+    Transaction#transaction{stored=[Command|Stored]};
+store_command(#pipeline{stored=Stored}=Pipeline, Command) ->
+    Pipeline#pipeline{stored=[Command|Stored]}.
 
 get_set_test() ->
     C = connect("127.0.0.1", 6379),
-    C2 = redis_store:set(blah, C, "foo", "bar"),
-    redis_store:get(blah, C2, "foo"),
+    redis_store:set(blah, C, "foo", "bar"),
+    redis_store:get(blah, C, "foo"),
     success = test_receive([{ok, <<"OK">>}, {ok, <<"bar">>}]).
 
 transaction_test() ->
     C = connect("127.0.0.1", 6379),
-    C2 = transaction(C),
-    C3 = redis_store:set(blah, C2, "foo", "bar"),
-    C4 = redis_store:get(blah, C3, "foo"),
-    C = commit(blah, C4),
+    Trans = transaction(C),
+    Trans2 = redis_store:set(Trans, "foo", "bar"),
+    Trans3 = redis_store:get(Trans2, "foo"),
+    commit(blah, Trans3),
     success = test_receive([{ok, [<<"OK">>, <<"bar">>]}]).
 
 pipeline_test() ->
     C = connect("127.0.0.1", 6379),
-    C2 = pipeline(C),
-    C3 = redis_store:set(blah, C2, "foo", "bar"),
-    C4 = redis_store:get(blah, C3, "foo"),
-    C = commit(blah, C4),
+    Pipe = pipeline(C),
+    Pipe2 = redis_store:set(Pipe, "foo", "bar"),
+    Pipe3 = redis_store:get(Pipe2, "foo"),
+    commit(blah, Pipe3),
     success = test_receive([[{ok, <<"OK">>}, {ok, <<"bar">>}]]).
 
 test_receive([]) ->
