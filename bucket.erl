@@ -51,9 +51,19 @@ handle_command(#state{transactions=Transactions, store=Store}=State, #command{se
             State
     end.
 
+update_meta(Key, Current) ->
+    put(Key, key_meta:update(Current)).
+
+delete_meta(Key, Current) ->
+    case key_meta:is_watched(Current) of
+        true -> put(Key, key_meta:update(Current));
+        false -> erase(Key)
+    end.
+
 handle_batch_operation(Store, #get{key=Key}) ->
     redis_store:get(Store, Key);
 handle_batch_operation(Store, #set{key=Key, value=Value}) ->
+    update_meta(Key, get(Key)),
     redis_store:set(Store, Key, Value);
 handle_batch_operation(Store, #delete{key=Key}) ->
     redis_store:delete(Store, Key).
@@ -61,16 +71,11 @@ handle_batch_operation(Store, #delete{key=Key}) ->
 handle_operation(Store, Session, #get{key=Key}, _Current) ->
     redis_store:get(Session, Store, Key);
 handle_operation(Store, Session, #set{key=Key, value=Value}, Current) ->
-    put(Key, key_meta:update(Current, Value)),
+    update_meta(Key, Current),
     redis_store:set(Session, Store, Key, Value);
 handle_operation(Store, Session, #delete{key=Key}, Current) ->
-    case key_meta:is_watched(Current) of
-        true -> put(Key, key_meta:update(Current));
-        false -> erase(Key)
-    end,
-    redis_store:delete(Session, Store, Key);
-handle_operation(_Store, _Session, Any, _Current) ->
-    io:format("unrecognized operation: ~p~n", [Any]).
+    delete_meta(Key, Current),
+    redis_store:delete(Session, Store, Key).
 
 add_operation(error, Operation) ->
     add_operation({ok, #transaction{}}, Operation);
@@ -173,7 +178,7 @@ handle_commit_transaction(#state{transactions=Transactions, store=Store}=State, 
 
 apply_transaction(Store, #transaction{operations=Operations}=Transaction, Session) ->
     Pipe = redis_store:pipeline(Store),
-    Pipe2 = lists:foldr(fun(O, P) -> handle_batch_operation(P, O) end, Pipe, Operations),
+    Pipe2 = lists:foldr(fun({_Order, O}, P) -> handle_batch_operation(P, O) end, Pipe, Operations),
     redis_store:commit(Session, Pipe2),
     unlock_transaction(Store, Transaction).
 

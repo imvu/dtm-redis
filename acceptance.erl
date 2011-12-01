@@ -14,45 +14,45 @@ test() ->
 
 test_get_set() ->
     io:format("### beginning test_get_set~n"),
-    ok = dtm_redis:set(foo, bar),
-    {ok, bar} = dtm_redis:get(foo),
+    {ok, <<"OK">>} = dtm_redis:set(foo, bar),
+    {ok, <<"bar">>} = dtm_redis:get(foo),
     io:format("test_get_set passed ###~n").
 
 test_delete() ->
     io:format("### beginning test_delete~n"),
-    ok = dtm_redis:set(foo, bar),
-    ok = dtm_redis:delete(foo),
-    undefined = dtm_redis:get(foo),
+    {ok, <<"OK">>} = dtm_redis:set(foo, bar),
+    {ok, <<"1">>} = dtm_redis:delete(foo),
+    {ok, undefined} = dtm_redis:get(foo),
     io:format("test_delete passed ###~n").
 
 test_transaction() ->
     io:format("### beginning test_transaction~n"),
-    ok = dtm_redis:set(foo, baz),
+    {ok, <<"OK">>} = dtm_redis:set(foo, baz),
     ok = dtm_redis:multi(),
     stored = dtm_redis:get(foo),
     stored = dtm_redis:set(foo, bar),
-    {ok, [{ok, baz}, ok]} = dtm_redis:exec(),
-    {ok, bar} = dtm_redis:get(foo),
+    {ok, [<<"baz">>, <<"OK">>]} = dtm_redis:exec(),
+    {ok, <<"bar">>} = dtm_redis:get(foo),
     io:format("test_transaction passed ###~n").
 
 test_watch() ->
     io:format("### beginning test_watch~n"),
     ok = dtm_redis:watch(foo),
-    ok = dtm_redis:set(foo, baz),
+    {ok, <<"OK">>} = dtm_redis:set(foo, baz),
     ok = dtm_redis:multi(),
     stored = dtm_redis:set(foo, bar),
     error = dtm_redis:exec(),
-    {ok, baz} = dtm_redis:get(foo),
+    {ok, <<"baz">>} = dtm_redis:get(foo),
     io:format("test_watch passed ###~n").
 
 test_unwatch() ->
     io:format("### beginning test_unwatch~n"),
     ok = dtm_redis:watch(foo),
-    ok = dtm_redis:set(foo, baz),
+    {ok, <<"OK">>} = dtm_redis:set(foo, baz),
     ok = dtm_redis:unwatch(),
     ok = dtm_redis:multi(),
     stored = dtm_redis:set(foo, bar),
-    {ok, [ok]} = dtm_redis:exec(),
-    {ok, bar} = dtm_redis:get(foo),
+    {ok, [<<"OK">>]} = dtm_redis:exec(),
+    {ok, <<"bar">>} = dtm_redis:get(foo),
     io:format("test_unwatch passed ###~n").
 
