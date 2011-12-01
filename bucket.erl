@@ -82,7 +82,7 @@ add_operation(error, Operation) ->
 add_operation({ok, #transaction{}=Transaction}, Operation) ->
     Transaction#transaction{operations=[Operation|Transaction#transaction.operations]}.
 
-handle_transact(#state{transactions=Transactions}=State, #transact{session=Session, id=Id, operation=Operation}) ->
+handle_transact(#state{transactions=Transactions}=State, #transact{session=Session, operation_id=Id, operation=Operation}) ->
     Session ! {self(), stored},
     NewTransaction = add_operation(dict:find(Session, Transactions), {Id, Operation}),
     State#state{transactions=dict:store(Session, NewTransaction, Transactions)}.

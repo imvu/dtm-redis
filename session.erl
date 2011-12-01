@@ -4,15 +4,15 @@
 -include("protocol.hrl").
 
 -record(transaction, {current, buckets}).
--record(state, {buckets, monitor, transaction=none, watches=none}).
+-record(state, {txn_id=none, buckets, monitors, transaction=none, watches=none}).
 
 start(shell, BucketMap, MonitorMap) ->
     io:format("starting shell session with pid ~p~n", [self()]),
-    loop(shell, #state{buckets=BucketMap, monitor=MonitorMap});
+    loop(shell, #state{buckets=BucketMap, monitors=MonitorMap});
 start(Client, BucketMap, MonitorMap) ->
     {ok, {Addr, Port}} = inet:peername(Client),
     io:format("starting client session with pid ~p and remote connection ~p:~p~n", [self(), inet_parse:ntoa(Addr), Port]),
-    loop(Client, #state{buckets=BucketMap, monitor=MonitorMap}),
+    loop(Client, #state{buckets=BucketMap, monitors=MonitorMap}),
     gen_tcp:close(Client).
 
 loop(Client, State) ->
@@ -39,13 +39,20 @@ loop(Client, State) ->
             loop(Client, State)
     end.
 
+get_txn_id(#state{txn_id=none, monitors=Monitors}=State) ->
+    TransactionId = txn_monitor:allocate(Monitors),
+    {TransactionId, State#state{txn_id=TransactionId}};
+get_txn_id(#state{txn_id=TransactionId}=State) ->
+    {TransactionId, State}.
+
 handle_watch(State, From, Key) ->
-    Bucket = hash:worker_for_key(Key, State#state.buckets),
-    Bucket ! #watch{session=self(), key=Key},
+    {TransactionId, NewState} = get_txn_id(State),
+    Bucket = hash:worker_for_key(Key, NewState#state.buckets),
+    Bucket ! #watch{txn_id=TransactionId, session=self(), key=Key},
     From ! receive
         {Bucket, ok} -> {self(), ok}
     end,
-    State#state{watches=add_watch(State#state.watches, Bucket)}.
+    NewState#state{watches=add_watch(NewState#state.watches, Bucket)}.
 
 add_watch(none, Bucket) ->
     sets:add_element(Bucket, sets:new());
@@ -53,14 +60,16 @@ add_watch(Watches, Bucket) ->
     sets:add_element(Bucket, Watches).
 
 handle_unwatch(State, From) ->
-    From ! {self(), send_unwatch(State#state.watches)},
-    State#state{watches=none}.
+    {Result, NewState} = send_unwatch(State),
+    From ! {self(), Result},
+    NewState#state{watches=none}.
 
-send_unwatch(none) ->
-    ok;
-send_unwatch(Watches) ->
-    sets:fold(fun(Bucket, NotUsed) -> Bucket ! #unwatch{session=self()}, NotUsed end, not_used, Watches),
-    loop_unwatch(Watches, sets:size(Watches)).
+send_unwatch(#state{watches=none}=State) ->
+    {ok, State};
+send_unwatch(#state{watches=Watches}=State) ->
+    {TransactionId, NewState} = get_txn_id(State),
+    sets:fold(fun(Bucket, NotUsed) -> Bucket ! #unwatch{txn_id=TransactionId, session=self()}, NotUsed end, not_used, Watches),
+    {loop_unwatch(Watches, sets:size(Watches)), NewState}.
 
 loop_unwatch(_, 0) ->
     ok;
@@ -75,20 +84,21 @@ handle_multi(State, From) ->
     case State#state.transaction of
         none ->
             From ! {self(), ok},
-            State#state{transaction=#transaction{current=0, buckets=sets:new()}};
+            {_TransactionId, NewState} = get_txn_id(State),
+            NewState#state{transaction=#transaction{current=0, buckets=sets:new()}};
         #transaction{} ->
             From ! {self(), error},
             State
     end.
 
-handle_exec(State, From) ->
+handle_exec(#state{txn_id=TransactionId}=State, From) ->
     case State#state.transaction of
         none ->
             From ! {self(), error},
             State;
         #transaction{buckets=Buckets} ->
-            From ! {self(), commit_transaction(Buckets)},
-            State#state{transaction=none}
+            From ! {self(), commit_transaction(TransactionId, Buckets)},
+            State#state{txn_id=none, transaction=none}
     end.
 
 handle_operation(#state{transaction=none}=State, From, Key, Operation) ->
@@ -99,9 +109,9 @@ handle_operation(#state{transaction=none}=State, From, Key, Operation) ->
         Any -> io:format("session got an unexpected message ~p~n", [Any])
     end,
     State;
-handle_operation(#state{transaction=Transaction}=State, From, Key, Operation) ->
+handle_operation(#state{txn_id=TransactionId, transaction=Transaction}=State, From, Key, Operation) ->
     Bucket = hash:worker_for_key(Key, State#state.buckets),
-    Bucket ! #transact{session=self(), id=Transaction#transaction.current, operation=Operation},
+    Bucket ! #transact{txn_id=TransactionId, session=self(), operation_id=Transaction#transaction.current, operation=Operation},
     receive
         {Bucket, Response} -> From ! {self(), Response};
         Any -> io:format("session got an unexpected message ~p~n", [Any])
@@ -111,14 +121,14 @@ handle_operation(#state{transaction=Transaction}=State, From, Key, Operation) ->
     NewTransaction = Transaction#transaction{current=Current, buckets=Buckets},
     State#state{transaction=NewTransaction}.
 
-commit_transaction(Buckets) ->
-    sets:fold(fun(Bucket, NotUsed) -> Bucket ! #lock_transaction{session=self()}, NotUsed end, not_used, Buckets),
+commit_transaction(TransactionId, Buckets) ->
+    sets:fold(fun(Bucket, NotUsed) -> Bucket ! #lock_transaction{txn_id=TransactionId, session=self()}, NotUsed end, not_used, Buckets),
     case loop_transaction_lock(Buckets, sets:size(Buckets), false) of
         error ->
-            sets:fold(fun(Bucket, NotUsed) -> Bucket ! #rollback_transaction{session=self()}, NotUsed end, not_used, Buckets),
+            sets:fold(fun(Bucket, NotUsed) -> Bucket ! #rollback_transaction{txn_id=TransactionId, session=self()}, NotUsed end, not_used, Buckets),
             error;
         ok ->
-            sets:fold(fun(Bucket, NotUsed) -> Bucket ! #commit_transaction{session=self()}, NotUsed end, not_used, Buckets),
+            sets:fold(fun(Bucket, NotUsed) -> Bucket ! #commit_transaction{txn_id=TransactionId, session=self()}, NotUsed end, not_used, Buckets),
             {ok, loop_transaction_commit(Buckets, [], sets:size(Buckets))}
     end.
 
@@ -146,3 +156,4 @@ loop_transaction_commit(Buckets, ResultsSoFar, _) ->
         Any ->
             io:format("session got an unexpected message ~p~n", [Any])
     end.
+

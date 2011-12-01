@@ -1,12 +1,12 @@
 -record(command, {session, operation}).
--record(transact, {session, id, operation}).
--record(watch, {session, key}).
--record(unwatch, {session}).
+-record(transact, {txn_id, session, operation_id, operation}).
+-record(watch, {txn_id, session, key}).
+-record(unwatch, {txn_id, session}).
 
--record(lock_transaction, {session}).
+-record(lock_transaction, {txn_id, session}).
 -record(transaction_locked, {bucket, status}).
--record(commit_transaction, {session}).
--record(rollback_transaction, {session}).
+-record(commit_transaction, {txn_id, session}).
+-record(rollback_transaction, {txn_id, session}).
 
 -record(get, {key}).
 -record(set, {key, value}).

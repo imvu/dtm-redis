@@ -10,15 +10,15 @@ start() ->
     start(#config{shell=true, buckets=2}).
 
 start(#config{shell=true}=Config) ->
-    register(shell, spawn_link(session, start, [shell, bucket_map(Config#config.buckets), monitor_map(Config#config.monitors)]));
+    register(shell, spawn_link(session, start, [shell, bucket_map(Config#config.buckets), monitor_list(Config#config.monitors)]));
 start(Config) ->
-    register(server, spawn_link(server, start, [Config, bucket_map(Config#config.buckets), monitor_map(Config#config.monitors)])).
+    register(server, spawn_link(server, start, [Config, bucket_map(Config#config.buckets), monitor_list(Config#config.monitors)])).
 
 bucket_map(Buckets) ->
     #buckets{bits=hash:bits(Buckets), map=lists:foldl(fun(I, M) -> dict:store(I - 1, spawn_link(bucket, start, []), M) end, dict:new(), lists:seq(1, Buckets))}.
 
-monitor_map(Monitors) ->
-    #monitors{map=lists:foldl(fun(I, M) -> dict:store(I - 1, spawn_link(txn_monitor, start, []), M) end, dict:new(), lists:seq(1, Monitors))}.
+monitor_list(Monitors) ->
+    [spawn_link(txn_monitor, start, []) || _I <- lists:seq(1, Monitors)].
 
 dispatch(Message) ->
     Shell = whereis(shell),
