@@ -25,20 +25,16 @@ loop(State) ->
             From ! {self(), #txn_id{monitor=self(), id=Id}},
             loop(NewState);
         #persist{}=Persist ->
-io:format('persist'),
             NewState = handle_persist(Persist, State),
             loop(NewState);
         #finalized{}=Finalize ->
-io:format('finalize'),
             NewState = handle_finalize(Finalize, State),
             loop(NewState);
 	{binlog_data_written, {persist, Id}} ->
-io:format('data written'),
 	    {ok, Value} = dict:find(Id, State#state.transactions),
 	    Value#transaction.session ! {self(), #txn_written{id=Id}},
 	    loop(State);
 	{binlog_data_written, {delete, _Id}} ->
-io:format('data delete'),
 	    loop(State);
         Any ->
             io:format("transaction monitor received message ~p~n", [Any]),
@@ -56,7 +52,7 @@ handle_allocate_test() ->
 handle_persist(#persist{from=From, id=Id, buckets=Buckets}, #state{binlog_state=BinLogState}=State) ->
     true = sets:is_set(Buckets),
     binlog:write(BinLogState, {persist, Id}, 'Write TXN_LOG'),
-    State#state{transactions=update_transaction(Id, #transaction{session=From, buckets=Buckets}, State#state.transactions, BinLogState), binlog_state=BinLogState}.
+    State#state{transactions=update_transaction(Id, #transaction{session=From, buckets=Buckets}, State#state.transactions, BinLogState)}.
 
 handle_persist_test() ->
     erlymock:start(),
@@ -71,7 +67,7 @@ handle_persist_test() ->
 handle_finalize(#finalized{id=Id, bucket=Bucket}, #state{}=State) ->
     Transaction = dict:fetch(Id, State#state.transactions),
     Buckets = sets:del_element(Bucket, Transaction#transaction.buckets),
-    State#state{transactions=update_transaction(Id, Transaction#transaction{buckets=Buckets}, State#state.transactions, State#state.binlog_state), binlog_state = State#state.binlog_state}.
+    State#state{transactions=update_transaction(Id, Transaction#transaction{buckets=Buckets}, State#state.transactions, State#state.binlog_state)}.
 
 handle_finalize_multiple_buckets_test() ->
     erlymock:start(),
