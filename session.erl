@@ -6,13 +6,13 @@
 -record(transaction, {current, buckets}).
 -record(state, {txn_id=none, buckets, monitors, transaction=none, watches=none}).
 
-start(shell, BucketMap, MonitorMap) ->
+start(shell, BucketMap, Monitors) ->
     io:format("starting shell session with pid ~p~n", [self()]),
-    loop(shell, #state{buckets=BucketMap, monitors=MonitorMap});
-start(Client, BucketMap, MonitorMap) ->
+    loop(shell, #state{buckets=BucketMap, monitors=Monitors});
+start(Client, BucketMap, Monitors) ->
     {ok, {Addr, Port}} = inet:peername(Client),
     io:format("starting client session with pid ~p and remote connection ~p:~p~n", [self(), inet_parse:ntoa(Addr), Port]),
-    loop(Client, #state{buckets=BucketMap, monitors=MonitorMap}),
+    loop(Client, #state{buckets=BucketMap, monitors=Monitors}),
     gen_tcp:close(Client).
 
 loop(Client, State) ->
