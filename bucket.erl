@@ -9,6 +9,9 @@
 -record(state, {transactions, store}).
 -record(transaction, {session, operations=[], deferred=[], watches=[], locked=false}).
 
+-record(single_operation, {session}).
+-record(transaction_operation, {txn_id}).
+
 start() ->
     io:format("starting storage bucket with pid ~p~n", [self()]),
     loop(#state{transactions=dict:new(), store=redis_store:connect("127.0.0.1", 6379)}).
@@ -23,14 +26,14 @@ loop(State) ->
             loop(handle_watch(State, Watch));
         #unwatch{}=Unwatch ->
             loop(handle_unwatch(State, Unwatch));
-        #lock_transaction{session=Session} ->
-            loop(handle_lock_transaction(State, Session));
-        #rollback_transaction{session=Session} ->
-            loop(handle_rollback_transaction(State, Session));
-        #commit_transaction{session=Session} ->
-            loop(handle_commit_transaction(State, Session));
-        #store_result{id=Session, result=Result} ->
-            loop(handle_store_result(State, Session, Result));
+        #lock_transaction{txn_id=TransactionId} ->
+            loop(handle_lock_transaction(State, TransactionId));
+        #rollback_transaction{txn_id=TransactionId} ->
+            loop(handle_rollback_transaction(State, TransactionId));
+        #commit_transaction{txn_id=TransactionId} ->
+            loop(handle_commit_transaction(State, TransactionId));
+        #store_result{id=Id, result=Result} ->
+            loop(handle_store_result(State, Id, Result));
         stop ->
             io:format("storage bucket halting after receiving stop message~n");
         Any ->
@@ -69,45 +72,47 @@ handle_batch_operation(Store, #delete{key=Key}) ->
     redis_store:delete(Store, Key).
 
 handle_operation(Store, Session, #get{key=Key}, _Current) ->
-    redis_store:get(Session, Store, Key);
+    redis_store:get(#single_operation{session=Session}, Store, Key);
 handle_operation(Store, Session, #set{key=Key, value=Value}, Current) ->
     update_meta(Key, Current),
-    redis_store:set(Session, Store, Key, Value);
+    redis_store:set(#single_operation{session=Session}, Store, Key, Value);
 handle_operation(Store, Session, #delete{key=Key}, Current) ->
     delete_meta(Key, Current),
-    redis_store:delete(Session, Store, Key).
+    redis_store:delete(#single_operation{session=Session}, Store, Key).
 
-add_operation(error, Operation) ->
-    add_operation({ok, #transaction{}}, Operation);
-add_operation({ok, #transaction{}=Transaction}, Operation) ->
+add_operation(error, Session, Operation) ->
+    add_operation({ok, #transaction{session=Session}}, Session, Operation);
+add_operation({ok, #transaction{}=Transaction}, Session, Operation) ->
+    Session = Transaction#transaction.session,
     Transaction#transaction{operations=[Operation|Transaction#transaction.operations]}.
 
-handle_transact(#state{transactions=Transactions}=State, #transact{session=Session, operation_id=Id, operation=Operation}) ->
+handle_transact(#state{transactions=Transactions}=State, #transact{txn_id=TransactionId, session=Session, operation_id=Id, operation=Operation}) ->
     Session ! {self(), stored},
-    NewTransaction = add_operation(dict:find(Session, Transactions), {Id, Operation}),
-    State#state{transactions=dict:store(Session, NewTransaction, Transactions)}.
+    NewTransaction = add_operation(dict:find(TransactionId, Transactions), Session, {Id, Operation}),
+    State#state{transactions=dict:store(TransactionId, NewTransaction, Transactions)}.
 
-handle_watch(#state{transactions=Transactions}=State, #watch{session=Session, key=Key}) ->
+handle_watch(#state{transactions=Transactions}=State, #watch{txn_id=TransactionId, session=Session, key=Key}) ->
     Session ! {self(), ok},
-    NewTransaction = add_watch(dict:find(Session, Transactions), Key),
-    State#state{transactions=dict:store(Session, NewTransaction, Transactions)}.
+    NewTransaction = add_watch(dict:find(TransactionId, Transactions), Session, Key),
+    State#state{transactions=dict:store(TransactionId, NewTransaction, Transactions)}.
 
-add_watch(error, Key) ->
-    add_watch({ok, #transaction{}}, Key);
-add_watch({ok, #transaction{watches=Watches}=Transaction}, Key) ->
+add_watch(error, Session, Key) ->
+    add_watch({ok, #transaction{session=Session}}, Session, Key);
+add_watch({ok, #transaction{watches=Watches}=Transaction}, Session, Key) ->
+    Session = Transaction#transaction.session,
     Current = get(Key),
     put(Key, key_meta:watch(Current)),
     Transaction#transaction{watches=[{Key, key_meta:version(Current)}|Watches]}.
 
-handle_unwatch(#state{transactions=Transactions}=State, #unwatch{session=Session}) ->
+handle_unwatch(#state{transactions=Transactions}=State, #unwatch{txn_id=TransactionId, session=Session}) ->
     Session ! {self(), ok},
-    State#state{transactions=remove_watch(Transactions, Session, dict:find(Session, Transactions))}.
+    State#state{transactions=remove_watch(Transactions, TransactionId, dict:find(TransactionId, Transactions))}.
 
-remove_watch(Transactions, _Session, error) ->
+remove_watch(Transactions, _TransactionId, error) ->
     Transactions;
-remove_watch(Transactions, Session, {ok, Transaction}) ->
+remove_watch(Transactions, TransactionId, {ok, Transaction}) ->
     remove_watches(Transaction#transaction.watches),
-    dict:store(Session, Transaction#transaction{watches=[]}, Transactions).
+    dict:store(TransactionId, Transaction#transaction{watches=[]}, Transactions).
 
 remove_watches([]) ->
     ok;
@@ -126,18 +131,18 @@ operation_key(#set{key=Key}) ->
 operation_key(#delete{key=Key}) ->
     Key.
 
-handle_lock_transaction(#state{transactions=Transactions, store=Store}=State, Session) ->
-    Transaction = dict:fetch(Session, Transactions),
+handle_lock_transaction(#state{transactions=Transactions, store=Store}=State, TransactionId) ->
+    Transaction = dict:fetch(TransactionId, Transactions),
     WatchStatus = check_watches(Transaction#transaction.watches),
-    LockStatus = lock_keys(WatchStatus, Transaction#transaction.operations, Session),
-    Session ! #transaction_locked{bucket=self(), status=LockStatus},
+    LockStatus = lock_keys(WatchStatus, Transaction#transaction.operations, TransactionId),
+    Transaction#transaction.session ! #transaction_locked{bucket=self(), status=LockStatus},
     NewTransaction = case LockStatus of
         ok ->
             Transaction#transaction{locked=true};
         error ->
             unlock_transaction(Store, Transaction#transaction{locked=false})
     end,
-    State#state{transactions=dict:store(Session, NewTransaction, State#state.transactions)}.
+    State#state{transactions=dict:store(TransactionId, NewTransaction, State#state.transactions)}.
 
 check_watches([]) ->
     ok;
@@ -149,37 +154,36 @@ check_watches([{Key, Version}|Remaining]) ->
 
 lock_keys(error, _, _) ->
     error;
-lock_keys(ok, [], _Session) ->
+lock_keys(ok, [], _TransactionId) ->
     ok;
-lock_keys(ok, [{_Id, Operation}|Remainder], Session) ->
+lock_keys(ok, [{_Id, Operation}|Remainder], TransactionId) ->
     Key = operation_key(Operation),
     Current = get(Key),
-    case key_meta:is_locked(Current, Session) of
+    case key_meta:is_locked(Current, TransactionId) of
         true -> error;
         false ->
-            put(Key, key_meta:lock(Current, Session)),
-            case lock_keys(ok, Remainder, Session) of
+            put(Key, key_meta:lock(Current, TransactionId)),
+            case lock_keys(ok, Remainder, TransactionId) of
                 ok -> ok;
                 error -> put(Key, Current), error
             end
     end.
 
-handle_rollback_transaction(#state{transactions=Transactions, store=Store}=State, Session) ->
-    Transaction = dict:fetch(Session, Transactions),
+handle_rollback_transaction(#state{transactions=Transactions, store=Store}=State, TransactionId) ->
+    Transaction = dict:fetch(TransactionId, Transactions),
     unlock_transaction(Store, Transaction),
     remove_watches(Transaction#transaction.watches),
-    State#state{transactions=dict:erase(Session, Transactions)}.
+    State#state{transactions=dict:erase(TransactionId, Transactions)}.
 
-handle_commit_transaction(#state{transactions=Transactions, store=Store}=State, Session) ->
-    Transaction = dict:fetch(Session, Transactions),
-    apply_transaction(Store, Transaction, Session),
-    remove_watches(Transaction#transaction.watches),
-    State#state{transactions=dict:erase(Session, Transactions)}.
+handle_commit_transaction(#state{transactions=Transactions, store=Store}=State, TransactionId) ->
+    Transaction = dict:fetch(TransactionId, Transactions),
+    apply_transaction(Store, Transaction, TransactionId),
+    State.
 
-apply_transaction(Store, #transaction{operations=Operations}=Transaction, Session) ->
+apply_transaction(Store, #transaction{operations=Operations}=Transaction, TransactionId) ->
     Pipe = redis_store:pipeline(Store),
     Pipe2 = lists:foldr(fun({_Order, O}, P) -> handle_batch_operation(P, O) end, Pipe, Operations),
-    redis_store:commit(Session, Pipe2),
+    redis_store:commit(#transaction_operation{txn_id=TransactionId}, Pipe2),
     unlock_transaction(Store, Transaction).
 
 unlock_transaction(Store, #transaction{deferred=Deferred, locked=false}=Transaction) ->
@@ -198,7 +202,12 @@ unlock_keys([{_Id, Operation}|Remainder]) ->
     put(Key, key_meta:unlock(get(Key))),
     unlock_keys(Remainder).
 
-handle_store_result(State, Session, Result) ->
+handle_store_result(State, #single_operation{session=Session}, Result) ->
     Session ! {self(), Result},
-    State.
+    State;
+handle_store_result(#state{transactions=Transactions}=State, #transaction_operation{txn_id=TransactionId}, Result) ->
+    {ok, Transaction} = dict:find(TransactionId, Transactions),
+    Transaction#transaction.session ! {self(), Result},
+    remove_watches(Transaction#transaction.watches),
+    State#state{transactions=dict:erase(TransactionId, Transactions)}.
 
