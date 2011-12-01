@@ -1,3 +1,6 @@
 [submodule "lib/eredis"]
 	path = lib/eredis
 	url = https://github.com/wooga/eredis.git
+[submodule "lib/erlymock"]
+	path = lib/erlymock
+	url = https://github.com/nialscorva/erlymock.git

@@ -1,5 +1,6 @@
+
 -module(binlog).
--export([init/0, init/1, send/3]).
+-export([init/1, send/3]).
 
 -record(state, {listener, file, filename}).
 -record(binlog_state, {pid}).
@@ -7,7 +8,7 @@
 -include_lib("eunit/include/eunit.hrl").
 
 start(Listener, UniqueId) ->
-    FileName = io_lib:format("MyFile_~p.bin", [UniqueId]),
+    FileName = filename:join("binlog", io_lib:format('binlog_~s.bin', [UniqueId])),
     {ok, FD} = file:open(FileName, [append, raw, binary, read]),
     loop(#state{listener=Listener, file=FD, filename=FileName}).
 
@@ -81,9 +82,9 @@ loop(State) ->
 
 init() ->
     random:seed(now()),
-    init(random:uniform(10000)).
+    init(io_lib:format('~p', [random:uniform(10000)])).
 
-init(Id) when is_integer(Id) ->
+init(Id) ->
     MyPid = self(),
     Pid = spawn(fun() -> start(MyPid, Id) end),
     #binlog_state{pid=Pid}.
