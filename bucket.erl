@@ -181,6 +181,7 @@ handle_rollback_transaction(#state{transactions=Transactions, store=Store}=State
     Transaction = dict:fetch(TransactionId, Transactions),
     unlock_transaction(Store, Transaction),
     remove_watches(Transaction#transaction.watches),
+    binlog:write(State#state.binlog_state, {delete, TransactionId}, "Bucket rollback transaction"),
     State#state{transactions=dict:erase(TransactionId, Transactions)}.
 
 handle_commit_transaction(#state{transactions=Transactions, store=Store}=State, TransactionId) ->
@@ -233,4 +234,5 @@ handle_store_result(#state{transactions=Transactions}=State, #transaction_operat
     {ok, Transaction} = dict:find(TransactionId, Transactions),
     Transaction#transaction.session ! {self(), map_transaction_results(Results, lists:reverse(Transaction#transaction.operations), [])},
     remove_watches(Transaction#transaction.watches),
+    binlog:write(State#state.binlog_state, {delete, TransactionId}, "Bucket stored transaction"),
     State#state{transactions=dict:erase(TransactionId, Transactions)}.
