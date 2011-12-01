@@ -1,6 +1,6 @@
 -module(redis_store).
 -export([connect/2]).
--export([get/2, get/3, set/3, set/4]). %, delete/3]).
+-export([get/2, get/3, set/3, set/4, delete/3]).
 -export([pipeline/1, transaction/1, commit/2]).
 -compile(export_all).
 
@@ -37,6 +37,17 @@ set(#transaction{}=State, Key, Value) ->
     store_command(State, set_command(Key, Value));
 set(#pipeline{}=State, Key, Value) ->
     store_command(State, set_command(Key, Value)).
+
+delete_command(Key) ->
+    ["DEL", Key].
+
+delete(Id, #default{client=Client}, Key) ->
+    dispatch_command(Id, Client, delete_command(Key)).
+
+delete(#transaction{}=State, Key) ->
+    store_command(State, delete_command(Key));
+delete(#pipeline{}=State, Key) ->
+    store_command(State, delete_command(Key)).
 
 transaction(#default{client=Client}) ->
     #transaction{client=Client}.

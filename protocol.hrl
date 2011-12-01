@@ -5,7 +5,7 @@
 
 -record(lock_transaction, {session}).
 -record(transaction_locked, {bucket, status}).
--record(commit_transaction, {session, now}).
+-record(commit_transaction, {session}).
 -record(rollback_transaction, {session}).
 
 -record(get, {key}).

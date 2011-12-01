@@ -118,7 +118,7 @@ commit_transaction(Buckets) ->
             sets:fold(fun(Bucket, NotUsed) -> Bucket ! #rollback_transaction{session=self()}, NotUsed end, not_used, Buckets),
             error;
         ok ->
-            sets:fold(fun(Bucket, NotUsed) -> Bucket ! #commit_transaction{session=self(), now=erlang:now()}, NotUsed end, not_used, Buckets),
+            sets:fold(fun(Bucket, NotUsed) -> Bucket ! #commit_transaction{session=self()}, NotUsed end, not_used, Buckets),
             {ok, loop_transaction_commit(Buckets, [], sets:size(Buckets))}
     end.
 
