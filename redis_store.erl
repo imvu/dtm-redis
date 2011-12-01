@@ -1,12 +1,14 @@
 -module(redis_store).
 -export([connect/2]).
 -export([get/3, set/4]). %, delete/3]).
--export([pipeline/1, multi/1, exec/2]).
+-export([pipeline/1, transaction/1, commit/2]).
 -compile(export_all).
 
 -include("store.hrl").
 
 -record(connection, {client, state, stored}).
+
+-include_lib("eunit/include/eunit.hrl").
 
 connect(Host, Port) ->
     {ok, Client} = eredis:start_link(Host, Port),
@@ -18,7 +20,7 @@ get(Id, #connection{}=Connection, Key) ->
 set(Id, #connection{}=Connection, Key, Value) ->
     handle_command(Id, Connection, ["SET", Key, Value]).
 
-multi(#connection{state=State}=Connection) ->
+transaction(#connection{state=State}=Connection) ->
     case State of
         default -> Connection#connection{state=transaction}
     end.
@@ -28,11 +30,12 @@ pipeline(#connection{state=State}=Connection) ->
         default -> Connection#connection{state=pipeline}
     end.
 
-exec(Id, #connection{state=State}=Connection) ->
+commit(Id, #connection{state=State}=Connection) ->
     case State of
         transaction -> dispatch_transaction(Id, Connection);
         pipeline -> dispatch_pipeline(Id, Connection)
-    end.
+    end,
+    Connection#connection{state=default, stored=[]}.
 
 handle_command(Id, #connection{client=Client, state=State, stored=Stored}=Connection, Command) ->
     case State of
@@ -64,17 +67,31 @@ dispatch_transaction(Id, #connection{client=Client, state=transaction, stored=Co
         Parent ! #store_result{id=Id, result=Result}
     end).
 
-driver() ->
+get_set_test() ->
     C = connect("127.0.0.1", 6379),
-    io:format("connected~n"),
     C2 = redis_store:set(blah, C, "foo", "bar"),
-    io:format("called set~n"),
     redis_store:get(blah, C2, "foo"),
-    io:format("called get~n"),
-    receive
-        Any -> io:format("got a response: ~p~n", [Any])
-    end,
-    receive
-        Any2 -> io:format("got a response: ~p~n", [Any2])
-    end.
+    success = test_receive([{ok, <<"OK">>}, {ok, <<"bar">>}]).
+
+transaction_test() ->
+    C = connect("127.0.0.1", 6379),
+    C2 = transaction(C),
+    C3 = redis_store:set(blah, C2, "foo", "bar"),
+    C4 = redis_store:get(blah, C3, "foo"),
+    C = commit(blah, C4),
+    success = test_receive([{ok, [<<"OK">>, <<"bar">>]}]).
+
+pipeline_test() ->
+    C = connect("127.0.0.1", 6379),
+    C2 = pipeline(C),
+    C3 = redis_store:set(blah, C2, "foo", "bar"),
+    C4 = redis_store:get(blah, C3, "foo"),
+    C = commit(blah, C4),
+    success = test_receive([[{ok, <<"OK">>}, {ok, <<"bar">>}]]).
+
+test_receive([]) ->
+    success;
+test_receive([Expected|T]) ->
+    {store_result, blah, Expected} = receive Any -> Any end,
+    test_receive(T).
 
