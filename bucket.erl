@@ -6,7 +6,7 @@
 -include("data_types.hrl").
 -include("store.hrl").
 
--record(state, {transactions, store}).
+-record(state, {transactions, store, binlog_state}).
 -record(transaction, {session, operations=[], deferred=[], watches=[], locked=false}).
 
 -record(single_operation, {session}).
@@ -14,7 +14,8 @@
 
 start() ->
     io:format("starting storage bucket with pid ~p~n", [self()]),
-    loop(#state{transactions=dict:new(), store=redis_store:connect("127.0.0.1", 6379)}).
+    BinlogState = binlog:init(pid_to_list(self())),
+    loop(#state{transactions=dict:new(), store=redis_store:connect("127.0.0.1", 6379), binlog_state=BinlogState}).
 
 loop(State) ->
     receive
@@ -34,6 +35,12 @@ loop(State) ->
             loop(handle_commit_transaction(State, TransactionId));
         #store_result{id=Id, result=Result} ->
             loop(handle_store_result(State, Id, Result));
+	{binlog_data_written, {lock_txn, Id}} ->
+	    {ok, Transaction} = dict:find(Id, State#state.transactions),
+	    Transaction#transaction.session ! #transaction_locked{bucket=self(), status=Transaction#transaction.locked},
+	    loop(State);
+	{binlog_data_written, {delete, _Id}} ->
+	    loop(State);
         stop ->
             io:format("storage bucket halting after receiving stop message~n");
         Any ->
@@ -135,13 +142,14 @@ handle_lock_transaction(#state{transactions=Transactions, store=Store}=State, Tr
     Transaction = dict:fetch(TransactionId, Transactions),
     WatchStatus = check_watches(Transaction#transaction.watches),
     LockStatus = lock_keys(WatchStatus, Transaction#transaction.operations, TransactionId),
-    Transaction#transaction.session ! #transaction_locked{bucket=self(), status=LockStatus},
     NewTransaction = case LockStatus of
-        ok ->
-            Transaction#transaction{locked=true};
-        error ->
-            unlock_transaction(Store, Transaction#transaction{locked=false})
-    end,
+			 ok ->
+			     binlog:write(State#state.binlog_state, {lock_txn, TransactionId}, "Bucket lock transaction"),
+			     Transaction#transaction{locked=true};
+			 error ->
+			     Transaction#transaction.session ! #transaction_locked{bucket=self(), status=LockStatus},
+			     unlock_transaction(Store, Transaction#transaction{locked=false})
+		     end,
     State#state{transactions=dict:store(TransactionId, NewTransaction, State#state.transactions)}.
 
 check_watches([]) ->
@@ -173,6 +181,7 @@ handle_rollback_transaction(#state{transactions=Transactions, store=Store}=State
     Transaction = dict:fetch(TransactionId, Transactions),
     unlock_transaction(Store, Transaction),
     remove_watches(Transaction#transaction.watches),
+    binlog:write(State#state.binlog_state, {delete, TransactionId}, "Bucket rollback transaction"),
     State#state{transactions=dict:erase(TransactionId, Transactions)}.
 
 handle_commit_transaction(#state{transactions=Transactions, store=Store}=State, TransactionId) ->
@@ -225,5 +234,5 @@ handle_store_result(#state{transactions=Transactions}=State, #transaction_operat
     {ok, Transaction} = dict:find(TransactionId, Transactions),
     Transaction#transaction.session ! {self(), map_transaction_results(Results, lists:reverse(Transaction#transaction.operations), [])},
     remove_watches(Transaction#transaction.watches),
+    binlog:write(State#state.binlog_state, {delete, TransactionId}, "Bucket stored transaction"),
     State#state{transactions=dict:erase(TransactionId, Transactions)}.
-
