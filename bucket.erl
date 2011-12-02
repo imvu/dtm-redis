@@ -145,7 +145,7 @@ handle_lock_transaction(#state{transactions=Transactions, store=Store}=State, Tr
     LockStatus = lock_keys(WatchStatus, Transaction#transaction.operations, TransactionId),
     NewTransaction = case LockStatus of
 			 ok ->
-			     binlog:write(State#state.binlog_state, {lock_txn, TransactionId}, "Bucket lock transaction"),
+			     binlog:write(State#state.binlog_state, {lock_txn, TransactionId}, Transaction),
 			     Transaction#transaction{locked=true};
 			 error ->
 			     Transaction#transaction.session ! #transaction_locked{bucket=self(), status=LockStatus},
