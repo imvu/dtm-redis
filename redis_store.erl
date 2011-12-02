@@ -19,6 +19,8 @@ connect(Host, Port) ->
 get_command_result({ok, undefined}) ->
     undefined;
 get_command_result({ok, Result}) ->
+    Result;
+get_command_result(Result) ->
     Result.
 
 get_operation(Key) ->
@@ -81,7 +83,7 @@ commit(Id, #transaction{client=Client, stored=Operations}) ->
             lists:foreach(fun(Command) -> {ok, <<"QUEUED">>} = eredis:q(Client, Command) end, Commands),
             MultiResults = eredis:q(Client, ["EXEC"]),
             Results = case MultiResults of
-                {ok, ResultList} -> {ok, lists:reverse(map_bulk_results(ResultList, Handlers, []))};
+                {ok, ResultList} -> lists:reverse(map_bulk_results(ResultList, Handlers, []));
                 _Else -> error
             end,
             Parent ! #store_result{id=Id, result=Results}
@@ -111,7 +113,7 @@ get_set_test() ->
     C = connect("127.0.0.1", 6379),
     redis_store:set(blah, C, "foo", "bar"),
     redis_store:get(blah, C, "foo"),
-    success = test_receive([ok, {ok, <<"bar">>}]).
+    success = test_receive([ok, <<"bar">>]).
 
 transaction_test() ->
     C = connect("127.0.0.1", 6379),
@@ -119,7 +121,7 @@ transaction_test() ->
     Trans2 = redis_store:set(Trans, "foo", "bar"),
     Trans3 = redis_store:get(Trans2, "foo"),
     commit(blah, Trans3),
-    success = test_receive([{ok, [ok, <<"bar">>]}]).
+    success = test_receive([[ok, <<"bar">>]]).
 
 pipeline_test() ->
     C = connect("127.0.0.1", 6379),
@@ -127,7 +129,7 @@ pipeline_test() ->
     Pipe2 = redis_store:set(Pipe, "foo", "bar"),
     Pipe3 = redis_store:get(Pipe2, "foo"),
     commit(blah, Pipe3),
-    success = test_receive([[ok, {ok, <<"bar">>}]]).
+    success = test_receive([[ok, <<"bar">>]]).
 
 test_receive([]) ->
     success;
