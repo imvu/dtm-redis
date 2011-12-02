@@ -125,6 +125,8 @@ handle_exec(#state{txn_id=TransactionId}=State, From) ->
 send_operation_response(From, Message) when is_pid(From) ->
     From ! Message;
 send_operation_response(From, {_Self, {ok, Response}}) ->
+    gen_tcp:send(From, redis_protocol:format_response(Response));
+send_operation_response(From, {_Self, Response}) ->
     gen_tcp:send(From, redis_protocol:format_response(Response)).
 
 handle_operation(#state{transaction=none}=State, From, Key, Operation) ->

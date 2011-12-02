@@ -16,6 +16,8 @@ format_response(Response) when is_list(Response) ->
     concat_binary([MultiStart|lists:foldr(fun(E, A) -> [format_response(E)|A] end, [], Response)]);
 format_response(undefined) ->
     <<"$-1\r\n">>;
+format_response(ok) ->
+    <<"+OK\r\n">>;
 format_response(Response) ->
     list_to_binary(lists:append(["$", integer_to_list(byte_size(Response)), "\r\n", binary_to_list(Response), "\r\n"])).
 
