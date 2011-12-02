@@ -62,6 +62,9 @@ handle_tcp_command(Client, State, {command, Name, Parameters}) ->
         "set" ->
             [SetKey, SetValue] = Parameters,
             handle_operation(State, Client, SetKey, #set{key=SetKey, value=SetValue});
+        "watch" ->
+            [WatchKey] = Parameters,
+            handle_watch(State, Client, WatchKey);
         Any ->
             io:format("tcp command ~p not implemented~n", [Any])
     end.
@@ -70,8 +73,8 @@ handle_watch(State, From, Key) ->
     {TransactionId, NewState} = get_txn_id(State),
     Bucket = hash:worker_for_key(Key, NewState#state.buckets),
     Bucket ! #watch{txn_id=TransactionId, session=self(), key=Key},
-    From ! receive
-        {Bucket, ok} -> {self(), ok}
+    receive
+        {Bucket, ok} -> send_watch_response(From)
     end,
     NewState#state{watches=add_watch(NewState#state.watches, Bucket)}.
 
@@ -79,6 +82,11 @@ add_watch(none, Bucket) ->
     sets:add_element(Bucket, sets:new());
 add_watch(Watches, Bucket) ->
     sets:add_element(Bucket, Watches).
+
+send_watch_response(From) when is_pid(From) ->
+    From ! {self(), ok};
+send_watch_response(From) ->
+    gen_tcp:send(From, redis_protocol:format_response(ok)).
 
 handle_unwatch(State, From) ->
     {Result, NewState} = send_unwatch(State),
