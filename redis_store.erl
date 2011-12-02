@@ -16,38 +16,51 @@ connect(Host, Port) ->
     {ok, Client} = eredis:start_link(Host, Port),
     #default{client=Client}.
 
-get_command(Key) ->
-    ["GET", Key].
+get_command_result({ok, undefined}) ->
+    undefined;
+get_command_result({ok, Result}) ->
+    Result.
+
+get_operation(Key) ->
+    {["GET", Key], fun(Result) -> get_command_result(Result) end }.
 
 get(Id, #default{client=Client}, Key) ->
-    dispatch_command(Id, Client, get_command(Key)).
+    dispatch_operation(Id, Client, get_operation(Key)).
 
 get(#transaction{}=State, Key) ->
-    store_command(State, get_command(Key));
+    store_operation(State, get_operation(Key));
 get(#pipeline{}=State, Key) ->
-    store_command(State, get_command(Key)).
+    store_operation(State, get_operation(Key)).
 
-set_command(Key, Value) ->
-    ["SET", Key, Value].
+set_command_result(<<"OK">>) ->
+    ok;
+set_command_result({ok, <<"OK">>}) ->
+    ok.
+
+set_operation(Key, Value) ->
+    {["SET", Key, Value], fun(Result) -> set_command_result(Result) end}.
 
 set(Id, #default{client=Client}, Key, Value) ->
-    dispatch_command(Id, Client, set_command(Key, Value)).
+    dispatch_operation(Id, Client, set_operation(Key, Value)).
 
 set(#transaction{}=State, Key, Value) ->
-    store_command(State, set_command(Key, Value));
+    store_operation(State, set_operation(Key, Value));
 set(#pipeline{}=State, Key, Value) ->
-    store_command(State, set_command(Key, Value)).
+    store_operation(State, set_operation(Key, Value)).
 
-delete_command(Key) ->
-    ["DEL", Key].
+delete_command_result({ok, _Value}) ->
+    ok.
+
+delete_operation(Key) ->
+    {["DEL", Key], fun(Result) -> delete_command_result(Result) end}.
 
 delete(Id, #default{client=Client}, Key) ->
-    dispatch_command(Id, Client, delete_command(Key)).
+    dispatch_operation(Id, Client, delete_operation(Key)).
 
 delete(#transaction{}=State, Key) ->
-    store_command(State, delete_command(Key));
+    store_operation(State, delete_operation(Key));
 delete(#pipeline{}=State, Key) ->
-    store_command(State, delete_command(Key)).
+    store_operation(State, delete_operation(Key)).
 
 transaction(#default{client=Client}) ->
     #transaction{client=Client}.
@@ -55,34 +68,50 @@ transaction(#default{client=Client}) ->
 pipeline(#default{client=Client}) ->
     #pipeline{client=Client}.
 
-commit(Id, #transaction{client=Client, stored=Commands}) ->
+map_bulk_results([], [], Results) ->
+    Results;
+map_bulk_results([Result|ResultsTail], [Handler|HandlersTail], Results) ->
+    map_bulk_results(ResultsTail, HandlersTail, [Handler(Result)|Results]).
+
+commit(Id, #transaction{client=Client, stored=Operations}) ->
     Parent = self(),
-    Ordered = lists:reverse(Commands),
+    {Commands, Handlers} = lists:foldl(fun({C, H}, {C0, H0}) -> {[C|C0], [H|H0]} end, {[], []}, Operations),
     spawn(fun() ->
-        {ok, <<"OK">>} = eredis:q(Client, ["MULTI"]),
-        lists:foreach(fun(Command) -> {ok, <<"QUEUED">>} = eredis:q(Client, Command) end, Ordered),
-        Result = eredis:q(Client, ["EXEC"]),
-        Parent ! #store_result{id=Id, result=Result}
-    end);
-commit(Id, #pipeline{client=Client, stored=Commands}) ->
+            {ok, <<"OK">>} = eredis:q(Client, ["MULTI"]),
+            lists:foreach(fun(Command) -> {ok, <<"QUEUED">>} = eredis:q(Client, Command) end, Commands),
+            MultiResults = eredis:q(Client, ["EXEC"]),
+            Results = case MultiResults of
+                {ok, ResultList} -> {ok, lists:reverse(map_bulk_results(ResultList, Handlers, []))};
+                _Else -> error
+            end,
+            Parent ! #store_result{id=Id, result=Results}
+        end);
+commit(Id, #pipeline{client=Client, stored=Operations}) ->
     Parent = self(),
-    Ordered = lists:reverse(Commands),
-    spawn(fun() -> Result = eredis:qp(Client, Ordered), Parent ! #store_result{id=Id, result=Result} end).
+    {Commands, Handlers} = lists:foldl(fun({C, H}, {C0, H0}) -> {[C|C0], [H|H0]} end, {[], []}, Operations),
+    spawn(fun() ->
+            Results = lists:reverse(map_bulk_results(eredis:qp(Client, Commands), Handlers, [])),
+            Parent ! #store_result{id=Id, result=Results}
+        end).
 
-dispatch_command(Id, Client, Command) ->
+dispatch_operation(Id, Client, Operation) ->
     Parent = self(),
-    spawn(fun() -> Result = eredis:q(Client, Command), Parent ! #store_result{id=Id, result=Result} end).
+    spawn(fun() ->
+            {Command, Handler} = Operation,
+            Result = eredis:q(Client, Command),
+            Parent ! #store_result{id=Id, result=Handler(Result)}
+        end).
 
-store_command(#transaction{stored=Stored}=Transaction, Command) ->
-    Transaction#transaction{stored=[Command|Stored]};
-store_command(#pipeline{stored=Stored}=Pipeline, Command) ->
-    Pipeline#pipeline{stored=[Command|Stored]}.
+store_operation(#transaction{stored=Stored}=Transaction, Operation) ->
+    Transaction#transaction{stored=[Operation|Stored]};
+store_operation(#pipeline{stored=Stored}=Pipeline, Operation) ->
+    Pipeline#pipeline{stored=[Operation|Stored]}.
 
 get_set_test() ->
     C = connect("127.0.0.1", 6379),
     redis_store:set(blah, C, "foo", "bar"),
     redis_store:get(blah, C, "foo"),
-    success = test_receive([{ok, <<"OK">>}, {ok, <<"bar">>}]).
+    success = test_receive([ok, {ok, <<"bar">>}]).
 
 transaction_test() ->
     C = connect("127.0.0.1", 6379),
@@ -90,7 +119,7 @@ transaction_test() ->
     Trans2 = redis_store:set(Trans, "foo", "bar"),
     Trans3 = redis_store:get(Trans2, "foo"),
     commit(blah, Trans3),
-    success = test_receive([{ok, [<<"OK">>, <<"bar">>]}]).
+    success = test_receive([{ok, [ok, <<"bar">>]}]).
 
 pipeline_test() ->
     C = connect("127.0.0.1", 6379),
@@ -98,7 +127,7 @@ pipeline_test() ->
     Pipe2 = redis_store:set(Pipe, "foo", "bar"),
     Pipe3 = redis_store:get(Pipe2, "foo"),
     commit(blah, Pipe3),
-    success = test_receive([[{ok, <<"OK">>}, {ok, <<"bar">>}]]).
+    success = test_receive([[ok, {ok, <<"bar">>}]]).
 
 test_receive([]) ->
     success;

@@ -128,7 +128,6 @@ send_operation_response(From, {_Self, {ok, Response}}) ->
     gen_tcp:send(From, redis_protocol:format_response(Response)).
 
 handle_operation(#state{transaction=none}=State, From, Key, Operation) ->
-    io:format("handle_operation ~p, ~p~n", [Key, Operation]),
     Bucket = hash:worker_for_key(Key, State#state.buckets),
     Bucket ! #command{session=self(), operation=Operation},
     receive

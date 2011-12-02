@@ -202,12 +202,28 @@ unlock_keys([{_Id, Operation}|Remainder]) ->
     put(Key, key_meta:unlock(get(Key))),
     unlock_keys(Remainder).
 
+map_result(ok) ->
+    ok;
+map_result(undefined) ->
+    undefined;
+map_result(error) ->
+    error;
+map_result(Result) ->
+    {ok, Result}.
+
+map_transaction_results(_Results, _Operations, error) ->
+    error;
+map_transaction_results([], [], Results) ->
+    Results;
+map_transaction_results([Result|ResultsTail], [{Order, _Operation}|OperationsTail], Results) ->
+    map_transaction_results(ResultsTail, OperationsTail, [{Order, Result}|Results]).
+
 handle_store_result(State, #single_operation{session=Session}, Result) ->
-    Session ! {self(), Result},
+    Session ! {self(), map_result(Result)},
     State;
-handle_store_result(#state{transactions=Transactions}=State, #transaction_operation{txn_id=TransactionId}, Result) ->
+handle_store_result(#state{transactions=Transactions}=State, #transaction_operation{txn_id=TransactionId}, Results) ->
     {ok, Transaction} = dict:find(TransactionId, Transactions),
-    Transaction#transaction.session ! {self(), Result},
+    Transaction#transaction.session ! {self(), map_transaction_results(Results, lists:reverse(Transaction#transaction.operations), [])},
     remove_watches(Transaction#transaction.watches),
     State#state{transactions=dict:erase(TransactionId, Transactions)}.
 
