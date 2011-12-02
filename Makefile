@@ -26,5 +26,7 @@ test: compile
 	erl -noshell -pa lib/eredis/ebin/ lib/erlymock/ebin/ -eval 'eunit:test(hash,[verbose])' -s init stop
 	erl -noshell -pa lib/eredis/ebin/ lib/erlymock/ebin/ -eval 'eunit:test(txn_monitor,[verbose])' -s init stop
 	erl -noshell -pa lib/eredis/ebin/ lib/erlymock/ebin/ -eval 'eunit:test(binlog,[verbose])' -s init stop
+	erl -noshell -pa lib/eredis/ebin/ lib/erlymock/ebin/ -eval 'eunit:test(redis_store,[verbose])' -s init stop
+	erl -noshell -pa lib/eredis/ebin/ lib/erlymock/ebin/ -eval 'eunit:test(redis_protocol,[verbose])' -s init stop
 	erl -noshell -pa lib/eredis/ebin/ lib/erlymock/ebin/ -eval 'acceptance:test()' -s init stop
 
