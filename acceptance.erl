@@ -41,7 +41,7 @@ test_watch() ->
     ok = dtm_redis:set(foo, baz),
     ok = dtm_redis:multi(),
     stored = dtm_redis:set(foo, bar),
-    error = dtm_redis:exec(),
+    undefined = dtm_redis:exec(),
     {ok, <<"baz">>} = dtm_redis:get(foo),
     io:format("test_watch passed ###~n").
 

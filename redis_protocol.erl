@@ -18,6 +18,8 @@ format_response(undefined) ->
     <<"$-1\r\n">>;
 format_response(error) ->
     <<"-ERROR\r\n">>;
+format_response(stored) ->
+    <<"+QUEUED\r\n">>;
 format_response(ok) ->
     <<"+OK\r\n">>;
 format_response(Response) ->
@@ -28,7 +30,8 @@ format_response_test() ->
     <<"*2\r\n$3\r\nfoo\r\n$3\r\nbar\r\n">> = format_response([<<"foo">>, <<"bar">>]),
     <<"+OK\r\n">> = format_response(ok),
     <<"$-1\r\n">> = format_response(undefined),
-    <<"-ERROR\r\n">> = format_response(error).
+    <<"-ERROR\r\n">> = format_response(error),
+    <<"+QUEUED\r\n">> = format_response(stored).
 
 parse_stream(#stream{parsed=Parsed, unparsed=Unparsed}=Stream, NewData) ->
     parse_stream(Stream#stream{parsed= <<>>, unparsed= <<Parsed/binary, Unparsed/binary, NewData/binary>>}).

@@ -67,6 +67,8 @@ handle_tcp_command(Client, State, {command, Name, Parameters}) ->
             handle_watch(State, Client, WatchKey);
         "multi" ->
             handle_multi(State, Client);
+        "exec" ->
+            handle_exec(State, Client);
         Any ->
             io:format("tcp command ~p not implemented~n", [Any])
     end.
@@ -127,13 +129,20 @@ handle_multi(State, From) ->
             State
     end.
 
+send_exec_response(From, Result) when is_pid(From) ->
+    From ! {self(), Result};
+send_exec_response(From, {ok, Result}) ->
+    gen_tcp:send(From, redis_protocol:format_response(Result));
+send_exec_response(From, Result) ->
+    gen_tcp:send(From, redis_protocol:format_response(Result)).
+
 handle_exec(#state{txn_id=TransactionId}=State, From) ->
     case State#state.transaction of
         none ->
-            From ! {self(), error},
+            send_exec_response(From, undefined),
             State;
         #transaction{buckets=Buckets} ->
-            From ! {self(), commit_transaction(TransactionId, Buckets)},
+            send_exec_response(From, commit_transaction(TransactionId, Buckets)),
             State#state{txn_id=none, transaction=none}
     end.
 
@@ -169,7 +178,7 @@ commit_transaction(TransactionId, Buckets) ->
     case loop_transaction_lock(Buckets, sets:size(Buckets), false) of
         error ->
             sets:fold(fun(Bucket, NotUsed) -> Bucket ! #rollback_transaction{txn_id=TransactionId, session=self()}, NotUsed end, not_used, Buckets),
-            error;
+            undefined;
         ok ->
             sets:fold(fun(Bucket, NotUsed) -> Bucket ! #commit_transaction{txn_id=TransactionId, session=self()}, NotUsed end, not_used, Buckets),
             {ok, loop_transaction_commit(Buckets, [], sets:size(Buckets))}
