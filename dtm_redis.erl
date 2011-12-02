@@ -1,5 +1,5 @@
 -module(dtm_redis).
--export([start/0, start/1]).
+-export([start/0, server_start/0, start/1]).
 -export([get/1, set/2, delete/1]).
 -export([watch/1, unwatch/0, multi/0, exec/0]).
 
@@ -8,6 +8,9 @@
 
 start() ->
     start(#config{shell=true, buckets=2}).
+
+server_start() ->
+    start(#config{port=6378}).
 
 start(#config{shell=true}=Config) ->
     register(shell, spawn_link(session, start, [shell, bucket_map(Config#config.buckets), monitor_list(Config#config.monitors)]));

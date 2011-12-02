@@ -53,9 +53,16 @@ get_txn_id(#state{txn_id=none, monitors=Monitors}=State) ->
 get_txn_id(#state{txn_id=TransactionId}=State) ->
     {TransactionId, State}.
 
-handle_tcp_command(_Client, State, {command, Name, Parameters}) ->
-    io:format("received command ~p, ~p from tcp client~n", [Name, Parameters]),
-    State.
+handle_tcp_command(Client, State, {command, Name, Parameters}) ->
+    Lower = string:to_lower(binary_to_list(Name)),
+    case Lower of
+        "get" ->
+            [GetKey] = Parameters,
+            StrGetKey = binary_to_list(GetKey),
+            handle_operation(State, Client, StrGetKey, #get{key=StrGetKey});
+        Any ->
+            io:format("tcp command ~p not implemented~n", [Any])
+    end.
 
 handle_watch(State, From, Key) ->
     {TransactionId, NewState} = get_txn_id(State),
@@ -113,11 +120,17 @@ handle_exec(#state{txn_id=TransactionId}=State, From) ->
             State#state{txn_id=none, transaction=none}
     end.
 
+send_operation_response(From, Message) when is_pid(From) ->
+    From ! Message;
+send_operation_response(From, {_Self, {ok, Response}}) ->
+    gen_tcp:send(From, redis_protocol:format_response(Response)).
+
 handle_operation(#state{transaction=none}=State, From, Key, Operation) ->
+    io:format("handle_operation ~p, ~p~n", [Key, Operation]),
     Bucket = hash:worker_for_key(Key, State#state.buckets),
     Bucket ! #command{session=self(), operation=Operation},
     receive
-        {Bucket, Response} -> From ! {self(), Response};
+        {Bucket, Response} -> send_operation_response(From, {self(), Response});
         Any -> io:format("session got an unexpected message ~p~n", [Any])
     end,
     State;
@@ -125,7 +138,7 @@ handle_operation(#state{txn_id=TransactionId, transaction=Transaction}=State, Fr
     Bucket = hash:worker_for_key(Key, State#state.buckets),
     Bucket ! #transact{txn_id=TransactionId, session=self(), operation_id=Transaction#transaction.current, operation=Operation},
     receive
-        {Bucket, Response} -> From ! {self(), Response};
+        {Bucket, Response} -> send_operation_response(From, {self(), Response});
         Any -> io:format("session got an unexpected message ~p~n", [Any])
     end,
     Current = Transaction#transaction.current + 1,

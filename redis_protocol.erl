@@ -1,5 +1,5 @@
 -module(redis_protocol).
--export([init/0, parse_stream/2]).
+-export([init/0, format_response/1, parse_stream/2]).
 -compile(export_all).
 
 -define(NEWLINE, "\r\n").
@@ -10,6 +10,18 @@
 
 init() ->
     #stream{parsed= <<>>, unparsed= <<>>}.
+
+format_response(Response) when is_list(Response) ->
+    MultiStart = list_to_binary(lists:append(["*", integer_to_list(length(Response)), "\r\n"])),
+    concat_binary([MultiStart|lists:foldr(fun(E, A) -> [format_response(E)|A] end, [], Response)]);
+format_response(undefined) ->
+    <<"$-1\r\n">>;
+format_response(Response) ->
+    list_to_binary(lists:append(["$", integer_to_list(byte_size(Response)), "\r\n", binary_to_list(Response), "\r\n"])).
+
+format_response_test() ->
+    <<"$3\r\nfoo\r\n">> = format_response(<<"foo">>),
+    <<"*2\r\n$3\r\nfoo\r\n$3\r\nbar\r\n">> = format_response([<<"foo">>, <<"bar">>]).
 
 parse_stream(#stream{parsed=Parsed, unparsed=Unparsed}=Stream, NewData) ->
     parse_stream(Stream#stream{parsed= <<>>, unparsed= <<Parsed/binary, Unparsed/binary, NewData/binary>>}).
