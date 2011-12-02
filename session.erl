@@ -65,6 +65,8 @@ handle_tcp_command(Client, State, {command, Name, Parameters}) ->
         "watch" ->
             [WatchKey] = Parameters,
             handle_watch(State, Client, WatchKey);
+        "multi" ->
+            handle_multi(State, Client);
         Any ->
             io:format("tcp command ~p not implemented~n", [Any])
     end.
@@ -109,14 +111,19 @@ loop_unwatch(Watches, _) ->
             loop_unwatch(NewWatches, sets:size(NewWatches))
     end.
 
+send_multi_response(From, Result) when is_pid(From) ->
+    From ! {self(), Result};
+send_multi_response(From, Result) ->
+    gen_tcp:send(From, redis_protocol:format_response(Result)).
+
 handle_multi(State, From) ->
     case State#state.transaction of
         none ->
-            From ! {self(), ok},
+            send_multi_response(From, ok),
             {_TransactionId, NewState} = get_txn_id(State),
             NewState#state{transaction=#transaction{current=0, buckets=sets:new()}};
         #transaction{} ->
-            From ! {self(), error},
+            send_multi_response(From, error),
             State
     end.
 
