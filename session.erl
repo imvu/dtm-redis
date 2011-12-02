@@ -68,6 +68,8 @@ handle_tcp_command(Client, State, {command, Name, Parameters}) ->
         "watch" ->
             [WatchKey] = Parameters,
             handle_watch(State, Client, WatchKey);
+        "unwatch" ->
+            handle_unwatch(State, Client);
         "multi" ->
             handle_multi(State, Client);
         "exec" ->
@@ -95,9 +97,14 @@ send_watch_response(From) when is_pid(From) ->
 send_watch_response(From) ->
     gen_tcp:send(From, redis_protocol:format_response(ok)).
 
+send_unwatch_response(From, Result) when is_pid(From) ->
+    From ! {self(), Result};
+send_unwatch_response(From, Result) ->
+    gen_tcp:send(From, redis_protocol:format_response(Result)).
+
 handle_unwatch(State, From) ->
     {Result, NewState} = send_unwatch(State),
-    From ! {self(), Result},
+    send_unwatch_response(From, Result),
     NewState#state{watches=none}.
 
 send_unwatch(#state{watches=none}=State) ->
