@@ -4,7 +4,7 @@
 -include("protocol.hrl").
 
 -record(transaction, {current, buckets}).
--record(state, {txn_id=none, buckets, monitors, transaction=none, watches=none}).
+-record(state, {txn_id=none, buckets, monitors, transaction=none, watches=none, stream}).
 
 start(shell, BucketMap, Monitors) ->
     io:format("starting shell session with pid ~p~n", [self()]),
@@ -12,14 +12,22 @@ start(shell, BucketMap, Monitors) ->
 start(Client, BucketMap, Monitors) ->
     {ok, {Addr, Port}} = inet:peername(Client),
     io:format("starting client session with pid ~p and remote connection ~p:~p~n", [self(), inet_parse:ntoa(Addr), Port]),
-    loop(Client, #state{buckets=BucketMap, monitors=Monitors}),
+    loop(Client, #state{buckets=BucketMap, monitors=Monitors, stream=redis_protocol:init()}),
     gen_tcp:close(Client).
 
 loop(Client, State) ->
     receive
         {tcp, Client, Data} ->
-            io:format("session received tcp message ~p~n", [Data]),
-            loop(Client, State);
+            {NewStream, Result} = redis_protocol:parse_stream(State#state.stream, Data),
+            NewState = State#state{stream=NewStream},
+            if
+                is_record(Result, command) ->
+                    loop(Client, handle_tcp_command(Client, NewState, Result));
+                Result == protocol_error ->
+                    io:format("unexpected data received from client connection, aborting~n", []);
+                Result == incomplete ->
+                    loop(Client, NewState)
+            end;
         {tcp_closed, Client} ->
             io:format("session connection closed~n");
         {From, watch, Key} ->
@@ -44,6 +52,10 @@ get_txn_id(#state{txn_id=none, monitors=Monitors}=State) ->
     {TransactionId, State#state{txn_id=TransactionId}};
 get_txn_id(#state{txn_id=TransactionId}=State) ->
     {TransactionId, State}.
+
+handle_tcp_command(_Client, State, {command, Name, Parameters}) ->
+    io:format("received command ~p, ~p from tcp client~n", [Name, Parameters]),
+    State.
 
 handle_watch(State, From, Key) ->
     {TransactionId, NewState} = get_txn_id(State),
