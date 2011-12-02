@@ -10,8 +10,6 @@ start(shell, BucketMap, Monitors) ->
     io:format("starting shell session with pid ~p~n", [self()]),
     loop(shell, #state{buckets=BucketMap, monitors=Monitors});
 start(Client, BucketMap, Monitors) ->
-    {ok, {Addr, Port}} = inet:peername(Client),
-    io:format("starting client session with pid ~p and remote connection ~p:~p~n", [self(), inet_parse:ntoa(Addr), Port]),
     loop(Client, #state{buckets=BucketMap, monitors=Monitors, stream=redis_protocol:init()}),
     gen_tcp:close(Client).
 
@@ -29,7 +27,7 @@ loop(Client, State) ->
                     loop(Client, NewState)
             end;
         {tcp_closed, Client} ->
-            io:format("session connection closed~n");
+            none;
         {From, watch, Key} ->
             loop(Client, handle_watch(State, From, Key));
         {From, unwatch} ->
