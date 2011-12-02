@@ -188,6 +188,7 @@ commit_transaction(TransactionId, Buckets) ->
             sets:fold(fun(Bucket, NotUsed) -> Bucket ! #rollback_transaction{txn_id=TransactionId, session=self()}, NotUsed end, not_used, Buckets),
             undefined;
         ok ->
+	    txn_monitor:persist(TransactionId, Buckets),
             sets:fold(fun(Bucket, NotUsed) -> Bucket ! #commit_transaction{txn_id=TransactionId, session=self()}, NotUsed end, not_used, Buckets),
             {ok, loop_transaction_commit(Buckets, [], sets:size(Buckets))}
     end.

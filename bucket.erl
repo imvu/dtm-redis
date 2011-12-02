@@ -236,5 +236,6 @@ handle_store_result(#state{transactions=Transactions}=State, #transaction_operat
     {ok, Transaction} = dict:find(TransactionId, Transactions),
     Transaction#transaction.session ! {self(), map_transaction_results(Results, lists:reverse(Transaction#transaction.operations), [])},
     remove_watches(Transaction#transaction.watches),
+    txn_monitor:finalized(TransactionId),
     binlog:write(State#state.binlog_state, {delete, TransactionId}, "Bucket stored transaction"),
     State#state{transactions=dict:erase(TransactionId, Transactions)}.

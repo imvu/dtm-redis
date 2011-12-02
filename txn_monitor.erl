@@ -105,14 +105,11 @@ allocate(Monitors) ->
     end.
 
 persist(#txn_id{}=Id, Buckets) ->
-io:format('pre presist'),
     Monitor = Id#txn_id.monitor,
     Monitor ! #persist{from=self(), id=Id, buckets=Buckets},
     receive
         {Monitor, #txn_written{id=Id}} -> ok
-    end,
-io:format('post presist').
-
+    end.
 
 finalized(#txn_id{}=Id) ->
     Id#txn_id.monitor ! #finalized{id=Id, bucket=self()}.
