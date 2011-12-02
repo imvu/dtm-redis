@@ -58,8 +58,10 @@ handle_tcp_command(Client, State, {command, Name, Parameters}) ->
     case Lower of
         "get" ->
             [GetKey] = Parameters,
-            StrGetKey = binary_to_list(GetKey),
-            handle_operation(State, Client, StrGetKey, #get{key=StrGetKey});
+            handle_operation(State, Client, GetKey, #get{key=GetKey});
+        "set" ->
+            [SetKey, SetValue] = Parameters,
+            handle_operation(State, Client, SetKey, #set{key=SetKey, value=SetValue});
         Any ->
             io:format("tcp command ~p not implemented~n", [Any])
     end.
