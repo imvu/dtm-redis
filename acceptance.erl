@@ -21,7 +21,7 @@ test_get_set() ->
 test_delete() ->
     io:format("### beginning test_delete~n"),
     ok = dtm_redis:set(foo, bar),
-    ok = dtm_redis:delete(foo),
+    1 = dtm_redis:delete(foo),
     undefined = dtm_redis:get(foo),
     io:format("test_delete passed ###~n").
 

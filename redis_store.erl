@@ -50,8 +50,10 @@ set(#transaction{}=State, Key, Value) ->
 set(#pipeline{}=State, Key, Value) ->
     store_operation(State, set_operation(Key, Value)).
 
-delete_command_result({ok, _Value}) ->
-    ok.
+delete_command_result({ok, <<"0">>}) ->
+    0;
+delete_command_result({ok, <<"1">>}) ->
+    1.
 
 delete_operation(Key) ->
     {["DEL", Key], fun(Result) -> delete_command_result(Result) end}.

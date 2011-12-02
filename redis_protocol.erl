@@ -14,6 +14,8 @@ init() ->
 format_response(Response) when is_list(Response) ->
     MultiStart = list_to_binary(lists:append(["*", integer_to_list(length(Response)), "\r\n"])),
     concat_binary([MultiStart|lists:foldr(fun(E, A) -> [format_response(E)|A] end, [], Response)]);
+format_response(Response) when is_integer(Response) ->
+    list_to_binary(lists:append([":", integer_to_list(Response), "\r\n"]));
 format_response(undefined) ->
     <<"$-1\r\n">>;
 format_response(error) ->
@@ -31,7 +33,8 @@ format_response_test() ->
     <<"+OK\r\n">> = format_response(ok),
     <<"$-1\r\n">> = format_response(undefined),
     <<"-ERROR\r\n">> = format_response(error),
-    <<"+QUEUED\r\n">> = format_response(stored).
+    <<"+QUEUED\r\n">> = format_response(stored),
+    <<":42\r\n">> = format_response(42).
 
 parse_stream(#stream{parsed=Parsed, unparsed=Unparsed}=Stream, NewData) ->
     parse_stream(Stream#stream{parsed= <<>>, unparsed= <<Parsed/binary, Unparsed/binary, NewData/binary>>}).

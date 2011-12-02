@@ -62,6 +62,9 @@ handle_tcp_command(Client, State, {command, Name, Parameters}) ->
         "set" ->
             [SetKey, SetValue] = Parameters,
             handle_operation(State, Client, SetKey, #set{key=SetKey, value=SetValue});
+        "del" ->
+            [DeleteKey] = Parameters,
+            handle_operation(State, Client, DeleteKey, #delete{key=DeleteKey});
         "watch" ->
             [WatchKey] = Parameters,
             handle_watch(State, Client, WatchKey);

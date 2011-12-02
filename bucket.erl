@@ -217,6 +217,8 @@ map_result(undefined) ->
     undefined;
 map_result(error) ->
     error;
+map_result(Result) when is_integer(Result) ->
+    Result;
 map_result(Result) ->
     {ok, Result}.
 
