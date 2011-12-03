@@ -15,9 +15,9 @@
 -record(state, {next_id=1, transactions, binlog_state}).
 -record(transaction, {session, buckets}).
 
-start(#monitor{}=_Config) ->
+start(#monitor{binlog=Filename}) ->
     io:format("starting transaction monitor with pid ~p~n", [self()]),
-    BinlogState = binlog:init(pid_to_list(self())),
+    BinlogState = binlog:init(Filename),
     loop(#state{transactions=dict:new(), binlog_state = BinlogState}).
 
 loop(State) ->

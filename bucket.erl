@@ -13,9 +13,9 @@
 -record(single_operation, {session}).
 -record(transaction_operation, {txn_id}).
 
-start(#bucket{store_host=Host, store_port=Port}) ->
+start(#bucket{store_host=Host, store_port=Port, binlog=Filename}) ->
     io:format("starting storage bucket with pid ~p and storage ~p:~p~n", [self(), Host, Port]),
-    BinlogState = binlog:init(pid_to_list(self())),
+    BinlogState = binlog:init(Filename),
     loop(#state{transactions=dict:new(), store=redis_store:connect(Host, Port), binlog_state=BinlogState}).
 
 loop(State) ->
