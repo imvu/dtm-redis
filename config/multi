@@ -1,0 +1,7 @@
+% see config/simple for field descriptions
+{config, false, [
+    {bucket, one@host1, "localhost", 6379},
+    {bucket, two@host2, "localhost", 6379},
+    {bucket, three@host3, "localhost", 6379},
+    {bucket, four@host4, "localhost", 6379}
+], 4, all, 6378, 100}.

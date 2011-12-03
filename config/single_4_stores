@@ -1,0 +1,7 @@
+% see config/simple for field descriptions
+{config, false, [
+    {bucket, none, "host1", 6379},
+    {bucket, none, "host2", 6379},
+    {bucket, none, "host3", 6379},
+    {bucket, none, "host4", 6379}
+], 4, all, 6378, 100}.
