@@ -16,13 +16,18 @@ server_start() ->
     io:format("starting dtm-redis using configuration ~p~n", [Config]),
     start(Config).
 
+start_bucket(#bucket{nodename=none}=Config) ->
+    spawn_link(bucket, start, [Config]);
+start_bucket(#bucket{nodename=Node}=Config) ->
+    spawn_link(Node, bucket, start, [Config]).
+
 start(#config{shell=true}=Config) ->
     register(shell, spawn_link(session, start, [shell, start_buckets(Config#config.buckets), monitor_list(Config#config.monitors)]));
 start(Config) ->
     register(server, spawn_link(server, start, [Config, start_buckets(Config#config.buckets), monitor_list(Config#config.monitors)])).
 
 start_buckets(Buckets) ->
-    Map = lists:foldl(fun(Config, M) -> dict:store(dict:size(M), spawn_link(bucket, start, [Config]), M) end, dict:new(), Buckets),
+    Map = lists:foldl(fun(Config, M) -> dict:store(dict:size(M), start_bucket(Config), M) end, dict:new(), Buckets),
     #buckets{bits=hash:bits(dict:size(Map)), map=Map}.
 
 monitor_list(Monitors) ->
