@@ -1,9 +1,13 @@
 % Config record format is:
 %  config: record identifier
 %  true/false: true is shell, false is tcp server
-%  buckets: number of buckets to create
+%  buckets: list of bucket records
+%    bucket: record identifier
+%    nodename: identifier of host in erlang cluster (name@host) - none for local node
+%    store_host: hostname of redis storage instance
+%    store_port: port of redis storage instance
 %  monitors: number of monitors to create
 %  interface: all for all network interfaces
 %  port: port number to listen on for connections
 %  backlog: number of waiting tcp sockets in the backlog
-{config, false, 1, 1, all, 6378, 100}.
+{config, false, [{bucket, none, "localhost", 6379}], 1, all, 6378, 100}.

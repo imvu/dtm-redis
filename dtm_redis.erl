@@ -7,7 +7,8 @@
 -include("protocol.hrl").
 
 start() ->
-    start(#config{shell=true, buckets=2}).
+    Bucket = #bucket{nodename=none, store_host="localhost", store_port=6379},
+    start(#config{shell=true, buckets=[Bucket, Bucket]}).
 
 server_start() ->
     [Filename|_] = init:get_plain_arguments(),
@@ -16,12 +17,13 @@ server_start() ->
     start(Config).
 
 start(#config{shell=true}=Config) ->
-    register(shell, spawn_link(session, start, [shell, bucket_map(Config#config.buckets), monitor_list(Config#config.monitors)]));
+    register(shell, spawn_link(session, start, [shell, start_buckets(Config#config.buckets), monitor_list(Config#config.monitors)]));
 start(Config) ->
-    register(server, spawn_link(server, start, [Config, bucket_map(Config#config.buckets), monitor_list(Config#config.monitors)])).
+    register(server, spawn_link(server, start, [Config, start_buckets(Config#config.buckets), monitor_list(Config#config.monitors)])).
 
-bucket_map(Buckets) ->
-    #buckets{bits=hash:bits(Buckets), map=lists:foldl(fun(I, M) -> dict:store(I - 1, spawn_link(bucket, start, []), M) end, dict:new(), lists:seq(1, Buckets))}.
+start_buckets(Buckets) ->
+    Map = lists:foldl(fun(Config, M) -> dict:store(dict:size(M), spawn_link(bucket, start, [Config]), M) end, dict:new(), Buckets),
+    #buckets{bits=hash:bits(dict:size(Map)), map=Map}.
 
 monitor_list(Monitors) ->
     [spawn_link(txn_monitor, start, []) || _I <- lists:seq(1, Monitors)].

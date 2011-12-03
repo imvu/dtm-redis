@@ -1,7 +1,8 @@
 -module(bucket).
--export([start/0]).
+-export([start/1]).
 -compile(export_all).
 
+-include("dtm_redis.hrl").
 -include("protocol.hrl").
 -include("data_types.hrl").
 -include("store.hrl").
@@ -12,10 +13,10 @@
 -record(single_operation, {session}).
 -record(transaction_operation, {txn_id}).
 
-start() ->
-    io:format("starting storage bucket with pid ~p~n", [self()]),
+start(#bucket{store_host=Host, store_port=Port}) ->
+    io:format("starting storage bucket with pid ~p and storage ~p:~p~n", [self(), Host, Port]),
     BinlogState = binlog:init(pid_to_list(self())),
-    loop(#state{transactions=dict:new(), store=redis_store:connect("127.0.0.1", 6379), binlog_state=BinlogState}).
+    loop(#state{transactions=dict:new(), store=redis_store:connect(Host, Port), binlog_state=BinlogState}).
 
 loop(State) ->
     receive
