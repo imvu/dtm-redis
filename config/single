@@ -3,11 +3,18 @@
 %  true/false: true is shell, false is tcp server
 %  buckets: list of bucket records
 %    bucket: record identifier
-%    nodename: identifier of host in erlang cluster (name@host) - none for local node
+%    nodename: identifier of node in erlang cluster (name@host) - none for local node
 %    store_host: hostname of redis storage instance
 %    store_port: port of redis storage instance
-%  monitors: number of monitors to create
+%    binlog: path to binlog file
+%  monitors: list of monitor records
+%    monitor: record identifier
+%    nodename: identifier of node in erlang cluster (name@host) - none for local node
+%    binlog: path to binlog file
 %  interface: all for all network interfaces
 %  port: port number to listen on for connections
 %  backlog: number of waiting tcp sockets in the backlog
-{config, false, [{bucket, none, "localhost", 6379}], 1, all, 6378, 100}.
+{config, false,
+    [{bucket, none, "localhost", 6379, "/tmp/dtm-redis.bucket.log"}],
+    [{monitor, none, "/tmp/dtm-redis.monitor.log"}],
+all, 6378, 100}.

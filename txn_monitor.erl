@@ -1,6 +1,8 @@
 -module(txn_monitor).
--export([start/0, allocate/1, finalized/1]).
+-export([start/1, allocate/1, finalized/1]).
 -compile(export_all).
+
+-include("dtm_redis.hrl").
 
 -include_lib("eunit/include/eunit.hrl").
 
@@ -13,7 +15,7 @@
 -record(state, {next_id=1, transactions, binlog_state}).
 -record(transaction, {session, buckets}).
 
-start() ->
+start(#monitor{}=_Config) ->
     io:format("starting transaction monitor with pid ~p~n", [self()]),
     BinlogState = binlog:init(pid_to_list(self())),
     loop(#state{transactions=dict:new(), binlog_state = BinlogState}).
