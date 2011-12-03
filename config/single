@@ -1,0 +1,9 @@
+% Config record format is:
+%  config: record identifier
+%  true/false: true is shell, false is tcp server
+%  buckets: number of buckets to create
+%  monitors: number of monitors to create
+%  interface: all for all network interfaces
+%  port: port number to listen on for connections
+%  backlog: number of waiting tcp sockets in the backlog
+{config, false, 1, 1, all, 6378, 100}.

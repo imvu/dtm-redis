@@ -23,7 +23,7 @@ debug: compile
 	${ERL} -s dtm_redis start
 
 debug_server: compile
-	${ERL} -s dtm_redis server_start
+	${ERL} -s dtm_redis server_start -extra config/single
 
 test: compile
 	erl -noshell -pa lib/eredis/ebin/ lib/erlymock/ebin/ -eval 'eunit:test(hash,[verbose])' -s init stop

@@ -10,7 +10,10 @@ start() ->
     start(#config{shell=true, buckets=2}).
 
 server_start() ->
-    start(#config{port=6378}).
+    [Filename|_] = init:get_plain_arguments(),
+    {ok, [Config|_]} = file:consult(Filename),
+    io:format("starting dtm-redis using configuration ~p~n", [Config]),
+    start(Config).
 
 start(#config{shell=true}=Config) ->
     register(shell, spawn_link(session, start, [shell, bucket_map(Config#config.buckets), monitor_list(Config#config.monitors)]));
