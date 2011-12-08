@@ -5,12 +5,14 @@
 
 start(Config, BucketMap, Monitors) ->
     io:format("starting dtm-redis server with pid ~p and ~p buckets~n", [self(), dict:size(BucketMap#buckets.map)]),
-    {ok, Listen} = gen_tcp:listen(Config#config.port, [binary, {backlog, Config#config.backlog}, {active, true}|iface(Config)]),
+    {ok, Listen} = gen_tcp:listen(Config#server.port, [binary, {backlog, Config#server.backlog}, {active, true}|iface(Config)]),
     loop(Listen, BucketMap, Monitors).
 
-iface(#config{iface=all}) ->
+iface(#server{iface=all}) ->
     [];
-iface(#config{iface=Iface}) ->
+iface(#server{iface={_,_,_,_}=Iface}) ->
+    [{ip, Iface}];
+iface(#server{iface=Iface}) ->
     {ok, Addr} = inet_parse:address(Iface),
     [{ip, Addr}].
 

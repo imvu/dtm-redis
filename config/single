@@ -1,6 +1,10 @@
 % Config record format is:
 %  config: record identifier
-%  true/false: true is shell, false is tcp server
+%  servers: shell for erlang interactive shell, otherwise list of server records
+%    server: record identifier
+%    interface: all for all network interfaces, {X,X,X,X}, or "X.X.X.X"
+%    port: port number to listen on for connections
+%    backlog: number of waiting tcp sockets in the backlog
 %  buckets: list of bucket records
 %    bucket: record identifier
 %    nodename: identifier of node in erlang cluster (name@host) - none for local node
@@ -11,10 +15,9 @@
 %    monitor: record identifier
 %    nodename: identifier of node in erlang cluster (name@host) - none for local node
 %    binlog: path to binlog file
-%  interface: all for all network interfaces
-%  port: port number to listen on for connections
-%  backlog: number of waiting tcp sockets in the backlog
-{config, false,
-    [{bucket, none, "localhost", 6379, "/tmp/dtm-redis.bucket.log"}],
-    [{monitor, none, "/tmp/dtm-redis.monitor.log"}],
-all, 6378, 100}.
+{config, shell,
+[
+    {bucket, none, "localhost", 6379, "/tmp/dtm-redis.bucket.log"}
+], [
+    {monitor, none, "/tmp/dtm-redis.monitor.log"}
+]}.

@@ -9,7 +9,7 @@
 start() ->
     Bucket = #bucket{nodename=none, store_host="localhost", store_port=6379},
     Monitor = #monitor{nodename=none, binlog="binlog/monitor.log"},
-    start(#config{shell=true, buckets=[Bucket#bucket{binlog="binlog/bucket0.log"}, Bucket#bucket{binlog="binlog/bucket1.log"}], monitors=[Monitor]}).
+    start(#config{servers=shell, buckets=[Bucket#bucket{binlog="binlog/bucket0.log"}, Bucket#bucket{binlog="binlog/bucket1.log"}], monitors=[Monitor]}).
 
 server_start() ->
     [Filename|_] = init:get_plain_arguments(),
@@ -27,10 +27,17 @@ start_monitor(#monitor{nodename=none}=Config) ->
 start_monitor(#monitor{nodename=Node}=Config) ->
     spawn_link(Node, txn_monitor, start, [Config]).
 
-start(#config{shell=true}=Config) ->
+start_server(#server{nodename=none}=Config, Buckets, Monitors) ->
+    spawn_link(server, start, [Config, Buckets, Monitors]);
+start_server(#server{nodename=Node}=Config, Buckets, Monitors) ->
+    spawn_link(Node, server, start, [Config, Buckets, Monitors]).
+
+start(#config{servers=shell}=Config) ->
     register(shell, spawn_link(session, start, [shell, start_buckets(Config#config.buckets), start_monitors(Config#config.monitors)]));
-start(Config) ->
-    register(server, spawn_link(server, start, [Config, start_buckets(Config#config.buckets), start_monitors(Config#config.monitors)])).
+start(#config{}=Config) ->
+    Buckets = start_buckets(Config#config.buckets),
+    Monitors = start_monitors(Config#config.monitors),
+    lists:foreach(fun(Server) -> start_server(Server, Buckets, Monitors) end, Config#config.servers).
 
 start_buckets(Buckets) ->
     Map = lists:foldl(fun(Config, M) -> dict:store(dict:size(M), start_bucket(Config), M) end, dict:new(), Buckets),
