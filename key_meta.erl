@@ -36,7 +36,9 @@ watch(#key{watches=Watches}=Key) ->
 unwatch(undefined) ->
     undefined;
 unwatch(#key{watches=Watches}=Key) when Watches > 0 ->
-    Key#key{watches=Watches-1}.
+    Key#key{watches=Watches-1};
+unwatch(#key{watches=0}=Key) ->
+    Key.
 
 update(undefined) ->
     #key{version=1};

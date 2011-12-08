@@ -144,13 +144,13 @@ handle_lock_transaction(#state{transactions=Transactions, store=Store}=State, Tr
     WatchStatus = check_watches(Transaction#transaction.watches),
     LockStatus = lock_keys(WatchStatus, Transaction#transaction.operations, TransactionId),
     NewTransaction = case LockStatus of
-			 ok ->
-			     binlog:write(State#state.binlog_state, {lock_txn, TransactionId}, Transaction),
-			     Transaction#transaction{locked=true};
-			 error ->
-			     Transaction#transaction.session ! #transaction_locked{bucket=self(), status=LockStatus},
-			     unlock_transaction(Store, Transaction#transaction{locked=false})
-		     end,
+        ok ->
+            binlog:write(State#state.binlog_state, {lock_txn, TransactionId}, Transaction),
+                Transaction#transaction{locked=true};
+        error ->
+            Transaction#transaction.session ! #transaction_locked{bucket=self(), status=LockStatus},
+                unlock_transaction(Store, Transaction#transaction{locked=false})
+    end,
     State#state{transactions=dict:store(TransactionId, NewTransaction, State#state.transactions)}.
 
 check_watches([]) ->
