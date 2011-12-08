@@ -1,4 +1,4 @@
-.SUFFIXES: .erl .beam .yrl
+.SUFFIXES: .erl .beam .yrl .c .o
 
 .erl.beam:
 	erlc -W $<
@@ -8,16 +8,27 @@
 
 ERL = erl -pa lib/eredis/ebin/ lib/erlymock/ebin/ boot start_clean
 
+CC = gcc
+CFLAGS = -std=gnu99 -g -O2 -fPIC -Ilib/hiredis/
+LFLAGS = -lpthread -lrt
+COMPILE = $(CC) $(CFLAGS)
+
 SRC_DIRS = .
 SOURCES = $(foreach dir, $(SRC_DIRS), $(wildcard $(dir)/*.erl))
 MODULES = $(patsubst %.erl, %, $(SOURCES))
 
 all: compile
 
-compile: ${MODULES:%=%.beam}
+compile: ${MODULES:%=%.beam} dtm-bench
+
+%.o : %.c
+	$(CC) $(CFLAGS) -c $<
+
+dtm-bench: dtm-bench.o
+	$(CC) $(LFLAGS) dtm-bench.o lib/hiredis/libhiredis.a -o dtm-bench
 
 clean:
-	${RM} *.beam
+	${RM} *.beam *.o dtm-bench
 
 debug: compile
 	${ERL} -s dtm_redis start

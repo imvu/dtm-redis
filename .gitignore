@@ -4,3 +4,7 @@
 # Crash dump file
 *.dump
 
+# Compiled dtm-bench binaries
+*.o
+dtm-bench
+
