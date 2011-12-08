@@ -15,8 +15,10 @@
 %    monitor: record identifier
 %    nodename: identifier of node in erlang cluster (name@host) - none for local node
 %    binlog: path to binlog file
-{config, shell,
+{config,
 [
+    {server, none, all, 6378, 100}
+], [
     {bucket, none, "localhost", 6379, "/tmp/dtm-redis.bucket.log"}
 ], [
     {monitor, none, "/tmp/dtm-redis.monitor.log"}
