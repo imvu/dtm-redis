@@ -246,6 +246,7 @@ void bench_get_set(redisContext * context, struct thread_params * params) {
             }
             get = 1;
         }
+        freeReplyObject(reply);
 
         struct timespec end;
         clock_gettime(CLOCK_MONOTONIC, &end);
