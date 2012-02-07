@@ -45,7 +45,7 @@ compile: ${MODULES:%=%.beam} dtm-bench
 	$(CC) $(CFLAGS) -c $<
 
 dtm-bench: dtm-bench.o
-	$(CC) $(LFLAGS) dtm-bench.o lib/hiredis/libhiredis.a -o dtm-bench
+	$(CC) dtm-bench.o lib/hiredis/libhiredis.a -o dtm-bench -lrt $(LFLAGS)
 
 clean:
 	${RM} *.beam *.o dtm-bench
@@ -57,6 +57,7 @@ debug_server: compile
 	${ERL} -s dtm_redis server_start -extra config/single
 
 test: compile
+	mkdir -p binlog
 	erl -noshell -pa lib/eredis/ebin/ lib/erlymock/ebin/ -eval 'eunit:test(hash,[verbose])' -s init stop
 	erl -noshell -pa lib/eredis/ebin/ lib/erlymock/ebin/ -eval 'eunit:test(txn_monitor,[verbose])' -s init stop
 	erl -noshell -pa lib/eredis/ebin/ lib/erlymock/ebin/ -eval 'eunit:test(binlog,[verbose])' -s init stop
