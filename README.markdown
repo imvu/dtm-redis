@@ -81,10 +81,10 @@ redis localhost:6378> get foo
 redis localhost:6378>
 </pre>
 
-Running a cluster
-==================
+Running a distributed cluster
+=============================
 
-The config/ directory contains some default cluster configuration files. The config/single file contains documentation for the layout of the cluster configuration. config/single is also the configuration used by <pre>make debug_server</pre>. The file config/cluster contains the configuration for running a 4-host cluster with 32 buckets and one listening server and one monitor per host. The hosts in the cluster operate in a master/slave configuration. The only real difference between master and slave is that the startup script is run on the master. The startup script reads the configuration and starts the dtm-redis remote processes on the slaves.
+The config/ directory contains some default cluster configuration files. The config/single file contains documentation for the layout of the cluster configuration. config/single is also the configuration used by "make debug_server". The file config/cluster contains the configuration for running a 4-host cluster with 32 buckets and one listening server and one monitor per host. The hosts in the cluster operate in a master/slave configuration. The only real difference between master and slave is that the startup script is run on the master. The startup script reads the configuration and starts the dtm-redis remote processes on the slaves.
 
 On each slave host that will participate in the cluster, run the following command:
 
@@ -142,5 +142,8 @@ elapsed time:    5.000936914
 requests/sec:    12564
 </pre>
 
-The first parameter is a comma separated list of host:port combinations. The available methods are get_set and trans.
+The first parameter is a comma separated list of host:port combinations.
+The second parameter is the number of clients to start per host.
+The third parameter is the number of seconds to perform the benchmark test.
+The available methods for the fourth parameter are "get_set" and "trans".
 
