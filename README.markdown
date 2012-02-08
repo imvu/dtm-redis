@@ -128,7 +128,7 @@ After starting any size cluster, the cluster can be benchmarked in a separate sh
 
 <pre>
 $ ./dtm-bench
-usage: dtm-bench <host:port[,host:port[,...]]> <clients> <time> <method>
+usage: dtm-bench &lt;host:port[,host:port[,...]]&gt; &lt;clients&gt; &lt;time&gt; &lt;method&gt;
 $ ./dtm-bench localhost:6378 5 5 get_set
 creating 5 clients connecting to each of 1 hosts
 starting clients
