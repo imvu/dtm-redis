@@ -143,7 +143,7 @@ int main(int argc, char ** argv) {
 
     printf("total requests:  %u\n", aggregate.total_requests);
     printf("total latency:   %u.%09lu\n", (unsigned int)aggregate.total_latency.tv_sec, aggregate.total_latency.tv_nsec);
-    printf("avarage latency: %8.6f\n", average_latency);
+    printf("average latency: %8.6f\n", average_latency);
     printf("max latency:     %u.%09lu\n", (unsigned int)aggregate.max_latency.tv_sec, aggregate.max_latency.tv_nsec);
     printf("elapsed time:    %u.%09lu\n", (unsigned int)elapsed_time.tv_sec, elapsed_time.tv_nsec);
     printf("requests/sec:    %u\n", requests_per_sec);
