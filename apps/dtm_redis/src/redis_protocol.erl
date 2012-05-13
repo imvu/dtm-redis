@@ -33,7 +33,7 @@ init() ->
 
 format_response(Response) when is_list(Response) ->
     MultiStart = list_to_binary(lists:append(["*", integer_to_list(length(Response)), "\r\n"])),
-    concat_binary([MultiStart|lists:foldr(fun(E, A) -> [format_response(E)|A] end, [], Response)]);
+    list_to_binary([MultiStart|lists:foldr(fun(E, A) -> [format_response(E)|A] end, [], Response)]);
 format_response(Response) when is_integer(Response) ->
     list_to_binary(lists:append([":", integer_to_list(Response), "\r\n"]));
 format_response(undefined) ->

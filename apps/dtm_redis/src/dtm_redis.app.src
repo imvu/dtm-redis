@@ -1,0 +1,12 @@
+{application, dtm_redis, [
+    {description, "Distributed Transaction Redis"},
+    {vsn, "0.3"},
+    {registered, []},
+    {applications, [
+        kernel,
+        stdlib
+    ]},
+    {mod, {dtm_redis_app, []}},
+    {env, []}
+]}.
+
