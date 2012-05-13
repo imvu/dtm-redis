@@ -18,5 +18,14 @@
 %% OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 %% SOFTWARE.
 
-{sub_dirs, ["dtm_redis"]}.
+-module(dtm_redis_app).
+-behavior(application).
+-export([start/2, stop/1]).
+
+start(_StartType, _StartArgs) ->
+    error_logger:info_msg("starting dtm_redis application", []),
+    dtm_redis_sup:start_link().
+
+stop(_State) ->
+    ok.
 

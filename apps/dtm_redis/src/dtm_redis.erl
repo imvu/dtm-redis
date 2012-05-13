@@ -19,12 +19,45 @@
 %% SOFTWARE.
 
 -module(dtm_redis).
+-behavior(gen_server).
+-export([start_link/0]).
+-export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
 -export([start/0, server_start/0, start/1]).
 -export([get/1, set/2, delete/1]).
 -export([watch/1, unwatch/0, multi/0, exec/0]).
 
 -include("dtm_redis.hrl").
 -include("protocol.hrl").
+
+start_link() ->
+    Bucket = #bucket{nodename=none, store_host="localhost", store_port=6379},
+    Monitor = #monitor{nodename=none, binlog="binlog/monitor.log"},
+    Config = #config{servers=shell, buckets=[Bucket#bucket{binlog="binlog/bucket0.log"}, Bucket#bucket{binlog="binlog/bucket1.log"}], monitors=[Monitor]},
+    gen_server:start_link({local, dtm_redis}, dtm_redis, Config, []).
+
+init(#config{}=Config) ->
+    error_logger:info_msg("starting dtm_redis", []),
+    register(shell, spawn_link(session, start, [shell, start_buckets(Config#config.buckets), start_monitors(Config#config.monitors)])),
+    {ok, none}.
+
+handle_call(Message, From, _State) ->
+    error_logger:error_msg("dtm_redis:handle_call unhandled message ~p from ~p", [Message, From]),
+    erlang:throw({error, unhandled}).
+
+handle_cast(Message, _State) ->
+    error_logger:error_msg("dtm_redis:handle_cast unhandled message ~p", [Message]),
+    erlang:throw({error, unhandled}).
+
+handle_info(Message, _State) ->
+    error_logger:error_msg("dtm_redis:handle_info unhandled message ~p", [Message]),
+    erlang:throw({error, unhandled}).
+
+terminate(Reason, _State) ->
+    error_logger:info_msg("terminating dtm_redis because ~p", [Reason]),
+    ok.
+
+code_change(_OldVsn, _State, _Extra) ->
+    ok.
 
 start() ->
     Bucket = #bucket{nodename=none, store_host="localhost", store_port=6379},

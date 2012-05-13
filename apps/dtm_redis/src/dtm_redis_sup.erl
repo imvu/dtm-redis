@@ -18,5 +18,16 @@
 %% OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 %% SOFTWARE.
 
-{sub_dirs, ["dtm_redis"]}.
+-module(dtm_redis_sup).
+-behavior(supervisor).
+-export([start_link/0, init/1]).
+
+start_link() ->
+    supervisor:start_link({local, ?MODULE}, ?MODULE, []).
+
+init([]) ->
+    error_logger:info_msg("initializing dtm_redis_sup", []),
+    {ok, {{one_for_one, 5, 10}, [
+        {dtm_redis, {dtm_redis, start_link, []}, permanent, 5000, worker, [dtm_redis]}
+    ]}}.
 
