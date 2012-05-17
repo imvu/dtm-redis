@@ -1,6 +1,9 @@
 # Compiled erlang binaries
 *.beam
 
+# Compiled app file
+apps/dtm_redis/ebin/dtm_redis.app
+
 # Crash dump file
 *.dump
 
