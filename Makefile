@@ -37,6 +37,9 @@ compile: dtm-redis dtm-bench
 
 dtm-redis:
 	rebar compile
+	rm -rf rel/dtm_redis
+	rebar generate
+	mkdir rel/dtm_redis/binlog
 
 %.o : %.c
 	$(CC) $(CFLAGS) -c $<

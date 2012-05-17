@@ -14,3 +14,5 @@ dtm-bench
 # Directory used for testing
 binlog/
 
+# Generated releases
+rel/dtm_redis/

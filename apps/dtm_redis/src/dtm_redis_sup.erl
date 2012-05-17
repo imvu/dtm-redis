@@ -27,7 +27,28 @@ start_link() ->
 
 init([]) ->
     error_logger:info_msg("initializing dtm_redis_sup", []),
+    init_mode(application:get_env(mode)).
+
+init_mode(undefined) ->
+    error_logger:info_msg("no mode specified for dtm_redis, assuming debug", []),
+    init_mode({ok, debug});
+init_mode({ok, debug}) ->
+    error_logger:info_msg("dtm_redis_sup starting in debug mode", []),
     {ok, {{one_for_one, 5, 10}, [
-        {dtm_redis, {dtm_redis, start_link, []}, permanent, 5000, worker, [dtm_redis]}
-    ]}}.
+        %{monitor, {txn_monitor, start_link, [debug]}, permanent, 5000, worker, [txn_monitor]},
+        %{bucket, {bucket, start_link, [debug]}, permanent, 5000, worker, [bucket]},
+        %{shell, {server, start_link, [debug]}, permanent, 5000, worker, [server]},
+        {dtm_redis, {dtm_redis, start_link, []}, permanent, 5000, worker, [dtm_rdis]}
+    ]}};
+init_mode({ok, master}) ->
+    {ok, {{one_for_one, 5, 10}, [
+        {master, {master_sup, start_link, []}, permanent, 5000, supervisor, [master_sup]}
+    ]}};
+init_mode({ok, slave}) ->
+    {ok, {{one_for_one, 5, 10}, [
+        {slave, {slave_sup, start_link, []}, permanent, 5000, supervisor, [slave_sup]}
+    ]}};
+init_mode({ok, Other}) ->
+    error_logger:error("dtm_redis application mode '~p' not supported", [Other]),
+    {error, mode_not_supported}.
 
