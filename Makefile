@@ -33,9 +33,9 @@ MODULES = $(patsubst %.erl, %, $(SOURCES))
 
 all: compile
 
-compile: rebar dtm-bench
+compile: dtm-redis dtm-bench
 
-rebar:
+dtm-redis:
 	rebar compile
 
 %.o : %.c
