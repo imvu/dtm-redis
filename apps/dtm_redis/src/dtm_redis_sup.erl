@@ -22,6 +22,8 @@
 -behavior(supervisor).
 -export([start_link/0, init/1]).
 
+-include("dtm_redis.hrl").
+
 start_link() ->
     supervisor:start_link({local, ?MODULE}, ?MODULE, []).
 
@@ -35,7 +37,7 @@ init_mode(undefined) ->
 init_mode({ok, debug}) ->
     error_logger:info_msg("dtm_redis_sup starting in debug mode", []),
     {ok, {{one_for_one, 5, 10}, [
-        %{monitor, {txn_monitor, start_link, [debug]}, permanent, 5000, worker, [txn_monitor]},
+        {monitor, {txn_monitor, start_link, [#monitor{binlog="binlog/monitor.log"}]}, permanent, 5000, worker, [txn_monitor]},
         %{bucket, {bucket, start_link, [debug]}, permanent, 5000, worker, [bucket]},
         %{shell, {server, start_link, [debug]}, permanent, 5000, worker, [server]},
         {dtm_redis, {dtm_redis, start_link, []}, permanent, 5000, worker, [dtm_rdis]}

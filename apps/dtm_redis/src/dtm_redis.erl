@@ -36,8 +36,8 @@ start_link() ->
     gen_server:start_link({local, dtm_redis}, dtm_redis, Config, []).
 
 init(#config{}=Config) ->
-    error_logger:info_msg("starting dtm_redis", []),
-    register(shell, spawn_link(session, start, [shell, start_buckets(Config#config.buckets), start_monitors(Config#config.monitors)])),
+    error_logger:info_msg("starting dtm_redis with pid ~p", [self()]),
+    register(shell, spawn_link(session, start, [shell, start_buckets(Config#config.buckets), [monitor]])),
     {ok, none}.
 
 handle_call(Message, From, _State) ->
@@ -56,8 +56,8 @@ terminate(Reason, _State) ->
     error_logger:info_msg("terminating dtm_redis because ~p", [Reason]),
     ok.
 
-code_change(_OldVsn, _State, _Extra) ->
-    ok.
+code_change(_OldVsn, State, _Extra) ->
+    {ok, State}.
 
 start() ->
     Bucket = #bucket{nodename=none, store_host="localhost", store_port=6379},
@@ -76,7 +76,8 @@ start_bucket(#bucket{nodename=Node}=Config) ->
     spawn_link(Node, bucket, start, [Config]).
 
 start_monitor(#monitor{nodename=none}=Config) ->
-    spawn_link(txn_monitor, start, [Config]);
+    {ok, Monitor} = txn_monitor:start_link(Config),
+    Monitor;
 start_monitor(#monitor{nodename=Node}=Config) ->
     spawn_link(Node, txn_monitor, start, [Config]).
 
