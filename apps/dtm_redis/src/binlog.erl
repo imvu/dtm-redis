@@ -19,169 +19,184 @@
 %% SOFTWARE.
 
 -module(binlog).
--export([init/1, write/3]).
+-behavior(gen_server).
+-export([start_link/2, read/2, write/3, delete/2]).
+-export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
 
--record(state, {listener, file, filename}).
--record(binlog_state, {pid}).
+-record(operation, {requestor, id}).
+-record(state, {file, filename, operations, data}).
+-record(read, {operation}).
+-record(write, {operation, data}).
+-record(delete, {operation}).
 
 -include_lib("eunit/include/eunit.hrl").
 
-start(Listener, FileName) ->
-    {ok, FD} = file:open(FileName, [append, raw, binary, read]),
-    loop(#state{listener=Listener, file=FD, filename=FileName}).
+% API methods
 
-write_to_file(#state{listener=Listener, file=FD}, Messages, OpIds) ->
-    file:write(FD, Messages),
-    file:sync(FD),
-    lists:foreach(fun(OpId) ->
-			  Listener ! {binlog_data_written, OpId}
-		  end,
-		  OpIds),
-    done.
+start_link(Name, Filename) ->
+    gen_server:start_link({local, Name}, ?MODULE, Filename, []).
 
-convert_data(Message) ->
-    BinData = term_to_binary(Message, [compressed]),
-    BinDataSize = byte_size(BinData),
-    [<<BinDataSize:32/integer-unsigned>>, BinData].
+read(Name, OpId) ->
+    gen_server:cast(Name, #read{operation=#operation{requestor=self(), id=OpId}}).
 
-process(State, Messages, OpIds) when is_list(Messages); is_list(OpIds) ->
-    case listen(State, 0) of
-	stop ->
-	    stop;
-	none ->
-	    write_to_file(State, lists:reverse(Messages), lists:reverse(OpIds));
-        {Data, OpId} ->
-	    process(State, [Data|Messages], [OpId|OpIds])
-    end.
+write(Name, OpId, Data) ->
+    gen_server:cast(Name, #write{operation=#operation{requestor=self(), id=OpId}, data=Data}).
 
-listen(#state{listener=Listener, file=FD, filename= FileName}, Timeout) ->
-    receive
-	{read, Listener, OpId} ->
-	    {ok, FD2} = file:open(FileName, [raw, binary, read]),
-	    {ok, <<BinDataSize:32/integer-unsigned>>} = file:read(FD2, 4),
-	    {ok, BinData} = file:read(FD2, BinDataSize),
-	    Data = binary_to_term(BinData),
-	    Listener ! {binlog_data_read, OpId, Data},
-	    done;
-        {write, Listener, Data, OpId} ->
-	    {convert_data(Data), OpId};
-	{delete, Listener, OpId} ->
-	    file:close(FD),
-	    file:delete(FileName),
-	    Listener ! {binlog_data_deleted, OpId, FileName},
-	    done;
-        stop ->
-            io:format("Binlog halting after receiving stop message~n"),
-	    stop;
-	Any ->
-	    io:format("My unknown message ~p~n", [Any])
-    after Timeout ->
-	    none
-    end.
+delete(Name, OpId) ->
+    gen_server:cast(Name, #delete{operation=#operation{requestor=self(), id=OpId}}).
 
-loop(State) ->
-    case listen(State, infinity) of
-	stop ->
-	    stop;
-	{Data, OpId} ->
-	    Ret = process(State, [Data], [OpId]),
-	    if stop /= Ret ->
-		    loop(State)
-	    end;
-	done ->
-	    loop(State)
-    end.
+stop(Name) ->
+    gen_server:call(Name, stop).
 
-init() ->
-    random:seed(now()),
-    init(io_lib:format('/tmp/dtm-redis.test.binlog~p', [random:uniform(10000)])).
+% gen_server callbacks
 
 init(Filename) ->
-    MyPid = self(),
-    Pid = spawn(fun() -> start(MyPid, Filename) end),
-    #binlog_state{pid=Pid}. 
+    error_logger:info_msg("starting binlog with pid ~p, writing to file ~p", [self(), Filename]),
+    {ok, FD} = file:open(Filename, [append, raw, binary, read]),
+    {ok, #state{file=FD, filename=Filename, operations=[], data=[]}}.
 
-write(#binlog_state{pid = Pid}, OpId, Message) ->
-    Pid ! {write, self(), Message, OpId}.
+handle_call(stop, _From, State) ->
+    {stop, normal, ok, State};
+handle_call(Message, From, _State) ->
+    error_logger:error_msg("binlog:handle_call unhandled message ~p from ~p", [Message, From]),
+    erlang:throw({error, unhandled}).
 
-read(#binlog_state{pid = Pid}, OpId) ->
-    Pid ! {read, self(), OpId}.
+handle_cast(#read{operation=Operation}, #state{}=State) ->
+    NewState = handle_read(Operation, State),
+    {noreply, NewState};
+handle_cast(#write{operation=Operation, data=Data}, #state{}=State) ->
+    NewState = handle_write(Operation, Data, State),
+    {noreply, NewState, 0};
+handle_cast(#delete{operation=Operation}, #state{}=State) ->
+    NewState = handle_delete(Operation, State),
+    {noreply, NewState};
+handle_cast(Message, _State) ->
+    error_logger:error_msg("binlog:handle_cast unhandled message ~p", [Message]),
+    erlang:throw({error, unhandled}).
 
-delete(#binlog_state{pid = Pid}, OpId) ->
-    Pid ! {delete, self(), OpId}.
+handle_info(timeout, #state{file=FD, operations=Operations, data=Data}=State) ->
+    write_to_file(FD, lists:reverse(Operations), lists:reverse(Data)),
+    {noreply, State#state{operations=[], data=[]}};
+handle_info(Message, _State) ->
+    error_logger:error_msg("binlog:handle_info unhandled message ~p", [Message]),
+    erlang:throw({error, unhandled}).
 
-testloop(_State) ->
-    receive
-	{binlog_data_written, OpId} ->
-	    io:format('Data written ~p~n', [OpId]),
-	    OpId;
-	{binlog_data_read, OpId, Data} ->
-	    io:format('Data read ~p: ~p~n', [OpId, Data]),
-	    {OpId, Data};
-	{binlog_data_deleted, OpId, Filename} ->
-	    io:format('File deleted ~p ~p~n', [OpId, Filename]),
-	    {OpId, Filename};
-	Any ->
-	    io:format('Unknown data received ~p~n', [Any])
-    end.
+terminate(Reason, #state{file=FD}) ->
+    error_logger:info_msg("terminating binlog because ~p", [Reason]),
+    file:close(FD),
+    ok.
 
+code_change(_OldVsn, State, _Extra) ->
+    {ok, State}.
+
+% internal methods
+
+handle_read(#operation{requestor=Requestor, id=OpId}, #state{filename=Filename}=State) ->
+    {ok, FD} = file:open(Filename, [raw, binary, read]),
+    {ok, <<BinDataSize:32/integer-unsigned>>} = file:read(FD, 4),
+    {ok, BinData} = file:read(FD, BinDataSize),
+    Data = binary_to_term(BinData),
+    Requestor ! {binlog_data_read, OpId, Data},
+    State.
+
+handle_write(#operation{}=Operation, Data, #state{operations=CurOperations, data=CurData}=State) ->
+    State#state{operations=[Operation|CurOperations], data=[convert_data(Data)|CurData]}.
+
+convert_data(Data) ->
+    BinData = term_to_binary(Data, [compressed]),
+    BinDataSize = byte_size(BinData),
+    <<BinDataSize:32/integer-unsigned, BinData/binary>>.
+
+handle_delete(#operation{requestor=Requestor, id=OpId}, #state{file=FD, filename=Filename}=State) ->
+    file:close(FD),
+    file:delete(Filename),
+    Requestor ! {binlog_data_deleted, OpId, Filename},
+    State#state{file=closed}.
+
+write_to_file(FD, Operations, Data) ->
+    file:write(FD, Data),
+    file:sync(FD),
+    lists:foreach(fun(#operation{requestor=Requestor, id=OpId}) ->
+            Requestor ! {binlog_data_written, OpId}
+        end,
+        Operations).
+
+% tests
+
+-include_lib("eunit/include/eunit.hrl").
+-ifdef(TEST).
+
+test_start() ->
+    random:seed(now()),
+    start_link(test_binlog, lists:flatten(io_lib:format('/tmp/dtm-redis.test.binlog~p', [random:uniform(10000)]))).
+
+test_receive() ->
+    receive Any -> Any end.
 
 file_deleted_test() ->
-    State = init(),
+    test_start(),
     OpId = random:uniform(10000),
-    write(State, OpId, 'My Message'),
-    OpId = testloop(State),
-    delete(State, OpId),
-    {OpId, FileName} = testloop(State),
-    {error, enoent} = file:read_file_info(FileName).
+    write(test_binlog, OpId, 'My Message'),
+    {binlog_data_written, OpId} = test_receive(),
+    delete(test_binlog, OpId),
+    {binlog_data_deleted, OpId, Filename} = test_receive(),
+    {error, enoent} = file:read_file_info(Filename),
+    stop(test_binlog).
 
 single_write_test() ->
-    State = init(),
+    test_start(),
     OpId = random:uniform(10000),
-    write(State, OpId, 'My Message'),
-    OpId = testloop(State),
-    delete(State, OpId),
-    {OpId, _} = testloop(State).
+    write(test_binlog, OpId, 'My Message'),
+    {binlog_data_written, OpId} = test_receive(),
+    delete(test_binlog, OpId),
+    {binlog_data_deleted, OpId, _Filename} = test_receive(),
+    stop(test_binlog).
 
 single_write_tuple_test() ->
-    State = init(),
+    test_start(),
     OpId = random:uniform(10000),
-    write(State, OpId, {'Foo', 'Bar', ['boo', 123]}),
-    OpId = testloop(State),
-    delete(State, OpId),
-    {OpId, _} = testloop(State).
+    write(test_binlog, OpId, {'Foo', 'Bar', ['boo', 123]}),
+    {binlog_data_written, OpId} = test_receive(),
+    delete(test_binlog, OpId),
+    {binlog_data_deleted, OpId, _Filename} = test_receive(),
+    stop(test_binlog).
 
 
 single_multiple_at_once_test() ->
-    State = init(),
+    test_start(),
     OpId1 = random:uniform(10000),
     OpId2 = random:uniform(10000),
-    write(State, OpId1, 'My Message'),
-    write(State, OpId2, 'My Message2'),
-    OpId1 = testloop(State),
-    OpId2 = testloop(State),
-    delete(State, OpId1),
-    {OpId1, _} = testloop(State).
+    write(test_binlog, OpId1, 'My Message'),
+    write(test_binlog, OpId2, 'My Message2'),
+    {binlog_data_written, OpId1} = test_receive(),
+    {binlog_data_written, OpId2} = test_receive(),
+    delete(test_binlog, OpId1),
+    {binlog_data_deleted, OpId1, _Filename} = test_receive(),
+    stop(test_binlog).
 
 read_first_string_test() ->
-    State = init(),
+    test_start(),
     OpId = random:uniform(10000),
     Message = 'Test1234',
-    write(State, OpId, Message),
-    OpId = testloop(State),
-    read(State, OpId),
-    {OpId, Message} = testloop(State),
-    delete(State, OpId),
-    {OpId, _} = testloop(State).
+    write(test_binlog, OpId, Message),
+    {binlog_data_written, OpId} = test_receive(),
+    read(test_binlog, OpId),
+    {binlog_data_read, OpId, Message} = test_receive(),
+    delete(test_binlog, OpId),
+    {binlog_data_deleted, OpId, _Filename} = test_receive(),
+    stop(test_binlog).
 
 read_first_complex_test() ->
-    State = init(),
+    test_start(),
     OpId = random:uniform(10000),
     Message = {'Foo', 'Bar', ['boo', 123]},
-    write(State, OpId, Message),
-    OpId = testloop(State),
-    read(State, OpId),
-    {OpId, Message} = testloop(State),
-    delete(State, OpId),
-    {OpId, _} = testloop(State).
+    write(test_binlog, OpId, Message),
+    {binlog_data_written, OpId} = test_receive(),
+    read(test_binlog, OpId),
+    {binlog_data_read, OpId, Message} = test_receive(),
+    delete(test_binlog, OpId),
+    {binlog_data_deleted, OpId, _Filename} = test_receive(),
+    stop(test_binlog).
+
+-endif.
 

@@ -37,7 +37,8 @@ init_mode(undefined) ->
 init_mode({ok, debug}) ->
     error_logger:info_msg("dtm_redis_sup starting in debug mode", []),
     {ok, {{one_for_one, 5, 10}, [
-        {monitor, {txn_monitor, start_link, [#monitor{binlog="binlog/monitor.log"}]}, permanent, 5000, worker, [txn_monitor]},
+        {monitor_binlog, {binlog, start_link, [monitor_binlog, "binlog/monitor.log"]}, permanent, 5000, worker, [binlog]},
+        {bucket_binlog, {binlog, start_link, [bucket_binlog, "binlog/monitor.log"]}, permanent, 5000, worker, [binlog]},        {monitor, {txn_monitor, start_link, []}, permanent, 5000, worker, [txn_monitor]},
         %{bucket, {bucket, start_link, [debug]}, permanent, 5000, worker, [bucket]},
         %{shell, {server, start_link, [debug]}, permanent, 5000, worker, [server]},
         {dtm_redis, {dtm_redis, start_link, []}, permanent, 5000, worker, [dtm_rdis]}

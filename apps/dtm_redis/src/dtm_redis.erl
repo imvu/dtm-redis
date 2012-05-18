@@ -30,9 +30,11 @@
 -include("protocol.hrl").
 
 start_link() ->
+    binlog:start_link(monitor_binlog, "binlog/monitor.log"),
+    binlog:start_link(bucket_binlog, "binlog/bucket.log"),
     Bucket = #bucket{nodename=none, store_host="localhost", store_port=6379},
-    Monitor = #monitor{nodename=none, binlog="binlog/monitor.log"},
-    Config = #config{servers=shell, buckets=[Bucket#bucket{binlog="binlog/bucket0.log"}, Bucket#bucket{binlog="binlog/bucket1.log"}], monitors=[Monitor]},
+    Monitor = #monitor{nodename=none},
+    Config = #config{servers=shell, buckets=[Bucket, Bucket], monitors=[Monitor]},
     gen_server:start_link({local, dtm_redis}, dtm_redis, Config, []).
 
 init(#config{}=Config) ->
@@ -60,9 +62,11 @@ code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
 start() ->
+    binlog:start_link(monitor_binlog, "binlog/monitor.log"),
+    binlog:start_link(bucket_binlog, "binlog/bucket.log"),
     Bucket = #bucket{nodename=none, store_host="localhost", store_port=6379},
-    Monitor = #monitor{nodename=none, binlog="binlog/monitor.log"},
-    start(#config{servers=shell, buckets=[Bucket#bucket{binlog="binlog/bucket0.log"}, Bucket#bucket{binlog="binlog/bucket1.log"}], monitors=[Monitor]}).
+    Monitor = #monitor{nodename=none},
+    start(#config{servers=shell, buckets=[Bucket, Bucket], monitors=[Monitor]}).
 
 server_start() ->
     [Filename|_] = init:get_plain_arguments(),
