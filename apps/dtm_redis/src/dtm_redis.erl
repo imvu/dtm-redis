@@ -30,8 +30,6 @@
 -include("protocol.hrl").
 
 start_link() ->
-    binlog:start_link(monitor_binlog, "binlog/monitor.log"),
-    binlog:start_link(bucket_binlog, "binlog/bucket.log"),
     Bucket = #bucket{nodename=none, store_host="localhost", store_port=6379},
     Monitor = #monitor{nodename=none},
     Config = #config{servers=shell, buckets=[Bucket, Bucket], monitors=[Monitor]},

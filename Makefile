@@ -36,9 +36,9 @@ all: compile
 compile: dtm-redis dtm-bench
 
 dtm-redis:
-	rebar compile
-	rm -rf rel/dtm_redis
-	rebar generate
+	./rebar compile
+	${RM} -rf rel/dtm_redis
+	./rebar generate
 	mkdir rel/dtm_redis/binlog
 
 %.o : %.c
@@ -49,6 +49,7 @@ dtm-bench: dtm-bench.o
 
 clean:
 	${RM} apps/dtm_redis/ebin/*.beam *.o dtm-bench
+	${RM} -rf rel/dtm_redis/
 
 debug: compile
 	${ERL} -s dtm_redis start
