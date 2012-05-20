@@ -19,8 +19,9 @@
 %% SOFTWARE.
 
 -module(bucket).
--export([start/1]).
--compile(export_all).
+-behavior(gen_server).
+-export([start_link/1, start_link/2]).
+-export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
 
 -include("dtm_redis.hrl").
 -include("protocol.hrl").
@@ -33,51 +34,73 @@
 -record(single_operation, {session}).
 -record(transaction_operation, {txn_id}).
 
-start(#bucket{store_host=Host, store_port=Port}) ->
-    io:format("starting storage bucket with pid ~p and storage ~p:~p~n", [self(), Host, Port]),
-    loop(#state{transactions=dict:new(), store=redis_store:connect(Host, Port)}).
+% api methods
 
-loop(State) ->
-    receive
-        #command{}=Command ->
-            loop(handle_command(State, Command));
-        #transact{}=Transact ->
-            loop(handle_transact(State, Transact));
-        #watch{}=Watch ->
-            loop(handle_watch(State, Watch));
-        #unwatch{}=Unwatch ->
-            loop(handle_unwatch(State, Unwatch));
-        #lock_transaction{txn_id=TransactionId} ->
-            loop(handle_lock_transaction(State, TransactionId));
-        #rollback_transaction{txn_id=TransactionId} ->
-            loop(handle_rollback_transaction(State, TransactionId));
-        #commit_transaction{txn_id=TransactionId} ->
-            loop(handle_commit_transaction(State, TransactionId));
-        #store_result{id=Id, result=Result} ->
-            loop(handle_store_result(State, Id, Result));
-	{binlog_data_written, {lock_txn, Id}} ->
-	    {ok, Transaction} = dict:find(Id, State#state.transactions),
-	    Transaction#transaction.session ! #transaction_locked{bucket=self(), status=Transaction#transaction.locked},
-	    loop(State);
-	{binlog_data_written, {delete, _Id}} ->
-	    loop(State);
-        stop ->
-            io:format("storage bucket halting after receiving stop message~n");
-        Any ->
-            io:format("storage bucket process received message ~p~n", [Any]),
-            loop(State)
-    end.
+start_link(#bucket{}=Bucket) ->
+    gen_server:start_link(?MODULE, Bucket, []).
 
-handle_command(#state{transactions=Transactions, store=Store}=State, #command{session=Session, operation=Operation}) ->
+start_link(Name, #bucket{}=Bucket) ->
+    gen_server:start_link({local, Name}, ?MODULE, Bucket, []).
+
+% gen_server callbacks
+
+init(#bucket{store_host=Host, store_port=Port}) ->
+    error_logger:info_msg("starting storage bucket with pid ~p and storage ~p:~p~n", [self(), Host, Port]),
+    {ok, #state{transactions=dict:new(), store=redis_store:connect(Host, Port)}}.
+
+handle_call(#command{}=Command, From, State) ->
+    {noreply, handle_command(Command, From, State)};
+handle_call(#transact{}=Transact, From, State) ->
+    {reply, stored, handle_transact(Transact, From, State)};
+handle_call(#watch{}=Watch, From, State) ->
+    {reply, ok, handle_watch(Watch, From, State)};
+handle_call(Message, From, _State) ->
+    error_logger:error_msg("bucket:handle_call unhandled message ~p from ~p", [Message, From]),
+    erlang:throw({error, unhandled}).
+
+handle_cast(#unwatch{}=Unwatch, State) ->
+    {noreply, handle_unwatch(Unwatch, State)};
+handle_cast(#lock_transaction{}=Transaction, State) ->
+    {noreply, handle_lock_transaction(Transaction, State)};
+handle_cast(#rollback_transaction{}=Transaction, State) ->
+    {noreply, handle_rollback_transaction(Transaction, State)};
+handle_cast(#commit_transaction{}=Transaction, State) ->
+    {noreply, handle_commit_transaction(#commit_transaction{}=Transaction, State)};
+handle_cast(Message, _State) ->
+    error_logger:error_msg("bucket:handle_cast unhandled message ~p", [Message]),
+    erlang:throw({error, unhandled}).
+
+handle_info(#store_result{id=Id, result=Result}, State) ->
+    {noreply, handle_store_result(Id, Result, State)};
+handle_info({binlog_data_written, {lock_txn, Id}}, State) ->
+    {ok, Transaction} = dict:find(Id, State#state.transactions),
+    Transaction#transaction.session ! #transaction_locked{bucket=self(), status=Transaction#transaction.locked},
+    {noreply, State};
+handle_info({binlog_data_written, {delete, _Id}}, State) ->
+    {noreply, State};
+handle_info(Message, _State) ->
+    error_logger:error_msg("bucket:handle_info unhandled message ~p", [Message]),
+    erlang:throw({error, unhandled}).
+
+terminate(Reason, _State) ->
+    error_logger:info_msg("terminating bucket with reason ~p", [Reason]),
+    ok.
+
+code_change(_OldVsn, State, _Extra) ->
+    {ok, State}.
+
+% internal methods
+
+handle_command(#command{session=Session, operation=Operation}, From, #state{transactions=Transactions, store=Store}=State) ->
     Current = get(operation_key(Operation)),
     case key_meta:is_locked(Current, Session) of
         true ->
             #key{locked=Locked} = Current,
             #transaction{deferred=Deferred}=Transaction = dict:fetch(Locked, Transactions),
-            NewTransaction = Transaction#transaction{deferred=[{Session, Operation}|Deferred]},
+            NewTransaction = Transaction#transaction{deferred=[{From, Operation}|Deferred]},
             State#state{transactions=dict:store(Locked, NewTransaction, Transactions)};
         false ->
-            handle_operation(Store, Session, Operation, Current),
+            handle_operation(Store, From, Operation, Current),
             State
     end.
 
@@ -98,14 +121,14 @@ handle_batch_operation(Store, #set{key=Key, value=Value}) ->
 handle_batch_operation(Store, #delete{key=Key}) ->
     redis_store:delete(Store, Key).
 
-handle_operation(Store, Session, #get{key=Key}, _Current) ->
-    redis_store:get(#single_operation{session=Session}, Store, Key);
-handle_operation(Store, Session, #set{key=Key, value=Value}, Current) ->
+handle_operation(Store, From, #get{key=Key}, _Current) ->
+    redis_store:get(#single_operation{session=From}, Store, Key);
+handle_operation(Store, From, #set{key=Key, value=Value}, Current) ->
     update_meta(Key, Current),
-    redis_store:set(#single_operation{session=Session}, Store, Key, Value);
-handle_operation(Store, Session, #delete{key=Key}, Current) ->
+    redis_store:set(#single_operation{session=From}, Store, Key, Value);
+handle_operation(Store, From, #delete{key=Key}, Current) ->
     delete_meta(Key, Current),
-    redis_store:delete(#single_operation{session=Session}, Store, Key).
+    redis_store:delete(#single_operation{session=From}, Store, Key).
 
 add_operation(error, Session, Operation) ->
     add_operation({ok, #transaction{session=Session}}, Session, Operation);
@@ -113,13 +136,11 @@ add_operation({ok, #transaction{}=Transaction}, Session, Operation) ->
     Session = Transaction#transaction.session,
     Transaction#transaction{operations=[Operation|Transaction#transaction.operations]}.
 
-handle_transact(#state{transactions=Transactions}=State, #transact{txn_id=TransactionId, session=Session, operation_id=Id, operation=Operation}) ->
-    Session ! {self(), stored},
+handle_transact(#transact{txn_id=TransactionId, session=Session, operation_id=Id, operation=Operation}, _From, #state{transactions=Transactions}=State) ->
     NewTransaction = add_operation(dict:find(TransactionId, Transactions), Session, {Id, Operation}),
     State#state{transactions=dict:store(TransactionId, NewTransaction, Transactions)}.
 
-handle_watch(#state{transactions=Transactions}=State, #watch{txn_id=TransactionId, session=Session, key=Key}) ->
-    Session ! {self(), ok},
+handle_watch(#watch{txn_id=TransactionId, session=Session, key=Key}, _From, #state{transactions=Transactions}=State) ->
     NewTransaction = add_watch(dict:find(TransactionId, Transactions), Session, Key),
     State#state{transactions=dict:store(TransactionId, NewTransaction, Transactions)}.
 
@@ -131,9 +152,10 @@ add_watch({ok, #transaction{watches=Watches}=Transaction}, Session, Key) ->
     put(Key, key_meta:watch(Current)),
     Transaction#transaction{watches=[{Key, key_meta:version(Current)}|Watches]}.
 
-handle_unwatch(#state{transactions=Transactions}=State, #unwatch{txn_id=TransactionId, session=Session}) ->
+handle_unwatch(#unwatch{txn_id=TransactionId, session=Session}, #state{transactions=Transactions}=State) ->
+    NewState = State#state{transactions=remove_watch(Transactions, TransactionId, dict:find(TransactionId, Transactions))},
     Session ! {self(), ok},
-    State#state{transactions=remove_watch(Transactions, TransactionId, dict:find(TransactionId, Transactions))}.
+    NewState.
 
 remove_watch(Transactions, _TransactionId, error) ->
     Transactions;
@@ -158,7 +180,7 @@ operation_key(#set{key=Key}) ->
 operation_key(#delete{key=Key}) ->
     Key.
 
-handle_lock_transaction(#state{transactions=Transactions, store=Store}=State, TransactionId) ->
+handle_lock_transaction(#lock_transaction{txn_id=TransactionId}, #state{transactions=Transactions, store=Store}=State) ->
     Transaction = dict:fetch(TransactionId, Transactions),
     WatchStatus = check_watches(Transaction#transaction.watches),
     LockStatus = lock_keys(WatchStatus, Transaction#transaction.operations, TransactionId),
@@ -197,14 +219,14 @@ lock_keys(ok, [{_Id, Operation}|Remainder], TransactionId) ->
             end
     end.
 
-handle_rollback_transaction(#state{transactions=Transactions, store=Store}=State, TransactionId) ->
+handle_rollback_transaction(#rollback_transaction{txn_id=TransactionId}, #state{transactions=Transactions, store=Store}=State) ->
     Transaction = dict:fetch(TransactionId, Transactions),
     unlock_transaction(Store, Transaction),
     remove_watches(Transaction#transaction.watches),
     binlog:write(bucket_binlog, {delete, TransactionId}, "Bucket rollback transaction"),
     State#state{transactions=dict:erase(TransactionId, Transactions)}.
 
-handle_commit_transaction(#state{transactions=Transactions, store=Store}=State, TransactionId) ->
+handle_commit_transaction(#commit_transaction{txn_id=TransactionId}, #state{transactions=Transactions, store=Store}=State) ->
     Transaction = dict:fetch(TransactionId, Transactions),
     apply_transaction(Store, Transaction, TransactionId),
     State.
@@ -249,10 +271,10 @@ map_transaction_results([], [], Results) ->
 map_transaction_results([Result|ResultsTail], [{Order, _Operation}|OperationsTail], Results) ->
     map_transaction_results(ResultsTail, OperationsTail, [{Order, Result}|Results]).
 
-handle_store_result(State, #single_operation{session=Session}, Result) ->
-    Session ! {self(), map_result(Result)},
+handle_store_result(#single_operation{session=From}, Result, State) ->
+    gen_server:reply(From, map_result(Result)),
     State;
-handle_store_result(#state{transactions=Transactions}=State, #transaction_operation{txn_id=TransactionId}, Results) ->
+handle_store_result(#transaction_operation{txn_id=TransactionId}, Results, #state{transactions=Transactions}=State) ->
     {ok, Transaction} = dict:find(TransactionId, Transactions),
     Transaction#transaction.session ! {self(), map_transaction_results(Results, lists:reverse(Transaction#transaction.operations), [])},
     remove_watches(Transaction#transaction.watches),

@@ -30,14 +30,13 @@
 -include("protocol.hrl").
 
 start_link() ->
-    Bucket = #bucket{nodename=none, store_host="localhost", store_port=6379},
-    Monitor = #monitor{nodename=none},
-    Config = #config{servers=shell, buckets=[Bucket, Bucket], monitors=[Monitor]},
-    gen_server:start_link({local, dtm_redis}, dtm_redis, Config, []).
+    gen_server:start_link({local, dtm_redis}, dtm_redis, [], []).
 
-init(#config{}=Config) ->
+init([]) ->
     error_logger:info_msg("starting dtm_redis with pid ~p", [self()]),
-    register(shell, spawn_link(session, start, [shell, start_buckets(Config#config.buckets), [monitor]])),
+    Map = dict:from_list([{0, bucket0}, {1, bucket1}]),
+    Buckets = #buckets{bits=hash:bits(dict:size(Map)), map=Map},
+    register(shell, spawn_link(session, start, [shell, Buckets, [monitor]])),
     {ok, none}.
 
 handle_call(Message, From, _State) ->
@@ -73,7 +72,8 @@ server_start() ->
     start(Config).
 
 start_bucket(#bucket{nodename=none}=Config) ->
-    spawn_link(bucket, start, [Config]);
+    {ok, Bucket} = bucket:start_link(Config),
+    Bucket;
 start_bucket(#bucket{nodename=Node}=Config) ->
     spawn_link(Node, bucket, start, [Config]).
 

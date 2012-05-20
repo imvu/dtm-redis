@@ -99,10 +99,8 @@ handle_tcp_command(Client, State, {command, Name, Parameters}) ->
 handle_watch(State, From, Key) ->
     {TransactionId, NewState} = get_txn_id(State),
     Bucket = hash:worker_for_key(Key, NewState#state.buckets),
-    Bucket ! #watch{txn_id=TransactionId, session=self(), key=Key},
-    receive
-        {Bucket, ok} -> send_watch_response(From)
-    end,
+    ok = gen_server:call(Bucket, #watch{txn_id=TransactionId, session=self(), key=Key}),
+    send_watch_response(From),
     NewState#state{watches=add_watch(NewState#state.watches, Bucket)}.
 
 add_watch(none, Bucket) ->
@@ -129,7 +127,7 @@ send_unwatch(#state{watches=none}=State) ->
     {ok, State};
 send_unwatch(#state{watches=Watches}=State) ->
     {TransactionId, NewState} = get_txn_id(State),
-    sets:fold(fun(Bucket, NotUsed) -> Bucket ! #unwatch{txn_id=TransactionId, session=self()}, NotUsed end, not_used, Watches),
+    sets:fold(fun(Bucket, NotUsed) -> gen_server:cast(Bucket, #unwatch{txn_id=TransactionId, session=self()}), NotUsed end, not_used, Watches),
     {loop_unwatch(Watches, sets:size(Watches)), NewState}.
 
 loop_unwatch(_, 0) ->
@@ -183,33 +181,27 @@ send_operation_response(From, {_Self, Response}) ->
 
 handle_operation(#state{transaction=none}=State, From, Key, Operation) ->
     Bucket = hash:worker_for_key(Key, State#state.buckets),
-    Bucket ! #command{session=self(), operation=Operation},
-    receive
-        {Bucket, Response} -> send_operation_response(From, {self(), Response});
-        Any -> io:format("session got an unexpected message ~p~n", [Any])
-    end,
+    Response = gen_server:call(Bucket, #command{session=self(), operation=Operation}),
+    send_operation_response(From, {self(), Response}),
     State;
 handle_operation(#state{txn_id=TransactionId, transaction=Transaction}=State, From, Key, Operation) ->
     Bucket = hash:worker_for_key(Key, State#state.buckets),
-    Bucket ! #transact{txn_id=TransactionId, session=self(), operation_id=Transaction#transaction.current, operation=Operation},
-    receive
-        {Bucket, Response} -> send_operation_response(From, {self(), Response});
-        Any -> io:format("session got an unexpected message ~p~n", [Any])
-    end,
+    Response = gen_server:call(Bucket, #transact{txn_id=TransactionId, session=self(), operation_id=Transaction#transaction.current, operation=Operation}),
+    send_operation_response(From, {self(), Response}),
     Current = Transaction#transaction.current + 1,
     Buckets = sets:add_element(Bucket, Transaction#transaction.buckets),
     NewTransaction = Transaction#transaction{current=Current, buckets=Buckets},
     State#state{transaction=NewTransaction}.
 
 commit_transaction(TransactionId, Buckets) ->
-    sets:fold(fun(Bucket, NotUsed) -> Bucket ! #lock_transaction{txn_id=TransactionId, session=self()}, NotUsed end, not_used, Buckets),
+    sets:fold(fun(Bucket, NotUsed) -> gen_server:cast(Bucket, #lock_transaction{txn_id=TransactionId}), NotUsed end, not_used, Buckets),
     case loop_transaction_lock(Buckets, sets:size(Buckets), false) of
         error ->
-            sets:fold(fun(Bucket, NotUsed) -> Bucket ! #rollback_transaction{txn_id=TransactionId, session=self()}, NotUsed end, not_used, Buckets),
+            sets:fold(fun(Bucket, NotUsed) -> gen_server:cast(Bucket, #rollback_transaction{txn_id=TransactionId}), NotUsed end, not_used, Buckets),
             undefined;
         ok ->
-	    txn_monitor:persist(TransactionId, Buckets),
-            sets:fold(fun(Bucket, NotUsed) -> Bucket ! #commit_transaction{txn_id=TransactionId, session=self()}, NotUsed end, not_used, Buckets),
+            txn_monitor:persist(TransactionId, Buckets),
+            sets:fold(fun(Bucket, NotUsed) -> gen_server:cast(Bucket, #commit_transaction{txn_id=TransactionId}), NotUsed end, not_used, Buckets),
             {ok, loop_transaction_commit(Buckets, [], sets:size(Buckets))}
     end.
 
