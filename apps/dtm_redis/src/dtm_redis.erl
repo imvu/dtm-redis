@@ -34,9 +34,6 @@ start_link() ->
 
 init([]) ->
     error_logger:info_msg("starting dtm_redis with pid ~p", [self()]),
-    Map = dict:from_list([{0, bucket0}, {1, bucket1}]),
-    Buckets = #buckets{bits=hash:bits(dict:size(Map)), map=Map},
-    register(shell, spawn_link(session, start, [shell, Buckets, [monitor]])),
     {ok, none}.
 
 handle_call(Message, From, _State) ->
@@ -102,18 +99,11 @@ start_buckets(Buckets) ->
 start_monitors(Monitors) ->
     [start_monitor(Config) || Config <- Monitors].
 
-dispatch(Message) ->
-    Shell = whereis(shell),
-    Shell ! Message,
-    receive
-        {Shell, Response} -> Response
-    end.
+get(Key) -> session:get(shell, Key).
+set(Key, Value) -> session:set(shell, Key, Value).
+delete(Key) -> session:delete(shell, Key).
 
-get(Key) -> dispatch({self(), Key, #get{key=Key}}).
-set(Key, Value) -> dispatch({self(), Key, #set{key=Key, value=Value}}).
-delete(Key) -> dispatch({self(), Key, #delete{key=Key}}).
-
-watch(Key) -> dispatch({self(), watch, Key}).
-unwatch() -> dispatch({self(), unwatch}).
-multi() -> dispatch({self(), multi}).
-exec() -> dispatch({self(), exec}).
+watch(Key) -> session:watch(shell, Key).
+unwatch() -> session:unwatch(shell).
+multi() -> session:multi(shell).
+exec() -> session:exec(shell).

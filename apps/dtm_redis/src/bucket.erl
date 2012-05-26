@@ -28,7 +28,7 @@
 -include("data_types.hrl").
 -include("store.hrl").
 
--record(state, {transactions, store}).
+-record(state, {name=none, transactions, store}).
 -record(transaction, {session, operations=[], deferred=[], watches=[], locked=false}).
 
 -record(single_operation, {session}).
@@ -37,16 +37,16 @@
 % api methods
 
 start_link(#bucket{}=Bucket) ->
-    gen_server:start_link(?MODULE, Bucket, []).
+    gen_server:start_link(?MODULE, [none, Bucket], []).
 
 start_link(Name, #bucket{}=Bucket) ->
-    gen_server:start_link({local, Name}, ?MODULE, Bucket, []).
+    gen_server:start_link({local, Name}, ?MODULE, [Name, Bucket], []).
 
 % gen_server callbacks
 
-init(#bucket{store_host=Host, store_port=Port}) ->
-    error_logger:info_msg("starting storage bucket with pid ~p and storage ~p:~p~n", [self(), Host, Port]),
-    {ok, #state{transactions=dict:new(), store=redis_store:connect(Host, Port)}}.
+init([Name, #bucket{store_host=Host, store_port=Port}]) ->
+    error_logger:info_msg("starting storage bucket with pid ~p and storage ~p:~p", [self(), Host, Port]),
+    {ok, #state{name=Name, transactions=dict:new(), store=redis_store:connect(Host, Port)}}.
 
 handle_call(#command{}=Command, From, State) ->
     {noreply, handle_command(Command, From, State)};
@@ -74,7 +74,7 @@ handle_info(#store_result{id=Id, result=Result}, State) ->
     {noreply, handle_store_result(Id, Result, State)};
 handle_info({binlog_data_written, {lock_txn, Id}}, State) ->
     {ok, Transaction} = dict:find(Id, State#state.transactions),
-    Transaction#transaction.session ! #transaction_locked{bucket=self(), status=Transaction#transaction.locked},
+    Transaction#transaction.session ! #transaction_locked{bucket=bucket_id(State), status=Transaction#transaction.locked},
     {noreply, State};
 handle_info({binlog_data_written, {delete, _Id}}, State) ->
     {noreply, State};
@@ -90,6 +90,11 @@ code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
 % internal methods
+
+bucket_id(#state{name=none}) ->
+    self();
+bucket_id(#state{name=Name}) ->
+    Name.
 
 handle_command(#command{session=Session, operation=Operation}, From, #state{transactions=Transactions, store=Store}=State) ->
     Current = get(operation_key(Operation)),
@@ -154,7 +159,7 @@ add_watch({ok, #transaction{watches=Watches}=Transaction}, Session, Key) ->
 
 handle_unwatch(#unwatch{txn_id=TransactionId, session=Session}, #state{transactions=Transactions}=State) ->
     NewState = State#state{transactions=remove_watch(Transactions, TransactionId, dict:find(TransactionId, Transactions))},
-    Session ! {self(), ok},
+    Session ! {bucket_id(State), ok},
     NewState.
 
 remove_watch(Transactions, _TransactionId, error) ->
@@ -189,7 +194,7 @@ handle_lock_transaction(#lock_transaction{txn_id=TransactionId}, #state{transact
             binlog:write(bucket_binlog, {lock_txn, TransactionId}, Transaction),
                 Transaction#transaction{locked=true};
         error ->
-            Transaction#transaction.session ! #transaction_locked{bucket=self(), status=LockStatus},
+            Transaction#transaction.session ! #transaction_locked{bucket=bucket_id(State), status=LockStatus},
                 unlock_transaction(Store, Transaction#transaction{locked=false})
     end,
     State#state{transactions=dict:store(TransactionId, NewTransaction, State#state.transactions)}.
@@ -276,7 +281,7 @@ handle_store_result(#single_operation{session=From}, Result, State) ->
     State;
 handle_store_result(#transaction_operation{txn_id=TransactionId}, Results, #state{transactions=Transactions}=State) ->
     {ok, Transaction} = dict:find(TransactionId, Transactions),
-    Transaction#transaction.session ! {self(), map_transaction_results(Results, lists:reverse(Transaction#transaction.operations), [])},
+    Transaction#transaction.session ! {bucket_id(State), map_transaction_results(Results, lists:reverse(Transaction#transaction.operations), [])},
     remove_watches(Transaction#transaction.watches),
     txn_monitor:finalized(TransactionId),
     binlog:write(bucket_binlog, {delete, TransactionId}, "Bucket stored transaction"),

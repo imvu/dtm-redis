@@ -20,53 +20,62 @@
 
 -module(acceptance).
 -export([test/0]).
--compile(export_all).
+-compile([test/0]).
+
+start() ->
+    ok = application:start(eredis),
+    ok = application:start(dtm_redis).
+
+stop() ->
+    ok = application:stop(dtm_redis),
+    ok = application:stop(eredis).
 
 test() ->
-    io:format("Starting dtm-redis acceptance tests~n"),
-    dtm_redis:start(),
+    error_logger:info_msg("Starting dtm-redis acceptance tests", []),
+    start(),
     test_get_set(),
     test_delete(),
     test_transaction(),
     test_watch(),
     test_unwatch(),
-    io:format("All tests passed~n").
+    error_logger:info_msg("All tests passed", []),
+    stop().
 
 test_get_set() ->
-    io:format("### beginning test_get_set~n"),
+    error_logger:info_msg("### beginning test_get_set", []),
     ok = dtm_redis:set(foo, bar),
     {ok, <<"bar">>} = dtm_redis:get(foo),
-    io:format("test_get_set passed ###~n").
+    error_logger:info_msg("test_get_set passed ###", []).
 
 test_delete() ->
-    io:format("### beginning test_delete~n"),
+    error_logger:info_msg("### beginning test_delete", []),
     ok = dtm_redis:set(foo, bar),
     1 = dtm_redis:delete(foo),
     undefined = dtm_redis:get(foo),
-    io:format("test_delete passed ###~n").
+    error_logger:info_msg("test_delete passed ###", []).
 
 test_transaction() ->
-    io:format("### beginning test_transaction~n"),
+    error_logger:info_msg("### beginning test_transaction", []),
     ok = dtm_redis:set(foo, baz),
     ok = dtm_redis:multi(),
     stored = dtm_redis:get(foo),
     stored = dtm_redis:set(foo, bar),
     {ok, [<<"baz">>, ok]} = dtm_redis:exec(),
     {ok, <<"bar">>} = dtm_redis:get(foo),
-    io:format("test_transaction passed ###~n").
+    error_logger:info_msg("test_transaction passed ###", []).
 
 test_watch() ->
-    io:format("### beginning test_watch~n"),
+    error_logger:info_msg("### beginning test_watch", []),
     ok = dtm_redis:watch(foo),
     ok = dtm_redis:set(foo, baz),
     ok = dtm_redis:multi(),
     stored = dtm_redis:set(foo, bar),
     undefined = dtm_redis:exec(),
     {ok, <<"baz">>} = dtm_redis:get(foo),
-    io:format("test_watch passed ###~n").
+    error_logger:info_msg("test_watch passed ###", []).
 
 test_unwatch() ->
-    io:format("### beginning test_unwatch~n"),
+    error_logger:info_msg("### beginning test_unwatch", []),
     ok = dtm_redis:watch(foo),
     ok = dtm_redis:set(foo, baz),
     ok = dtm_redis:unwatch(),
@@ -74,5 +83,5 @@ test_unwatch() ->
     stored = dtm_redis:set(foo, bar),
     {ok, [ok]} = dtm_redis:exec(),
     {ok, <<"bar">>} = dtm_redis:get(foo),
-    io:format("test_unwatch passed ###~n").
+    error_logger:info_msg("test_unwatch passed ###", []).
 
