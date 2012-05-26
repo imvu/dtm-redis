@@ -60,6 +60,7 @@ debug_server: compile
 test: compile
 	mkdir -p binlog
 	erl -noshell -pa lib/eredis/ebin/ lib/erlymock/ebin/ apps/dtm_redis/ebin/ -eval 'eunit:test(hash,[verbose])' -s init stop
+	erl -noshell -pa lib/eredis/ebin/ lib/erlymock/ebin/ apps/dtm_redis/ebin/ -eval 'eunit:test(operation,[verbose])' -s init stop
 	erl -noshell -pa lib/eredis/ebin/ lib/erlymock/ebin/ apps/dtm_redis/ebin/ -eval 'eunit:test(txn_monitor,[verbose])' -s init stop
 	erl -noshell -pa lib/eredis/ebin/ lib/erlymock/ebin/ apps/dtm_redis/ebin/ -eval 'eunit:test(binlog,[verbose])' -s init stop
 	erl -noshell -pa lib/eredis/ebin/ lib/erlymock/ebin/ apps/dtm_redis/ebin/ -eval 'eunit:test(redis_store,[verbose])' -s init stop

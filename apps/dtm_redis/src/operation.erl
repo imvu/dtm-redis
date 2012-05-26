@@ -18,13 +18,29 @@
 %% OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 %% SOFTWARE.
 
--record(command, {session, operation}).
--record(transact, {txn_id, session, operation_id, operation}).
--record(watch, {txn_id, session, key}).
--record(unwatch, {txn_id, session}).
+-module(operation).
+-export([key/1]).
 
--record(lock_transaction, {txn_id, session}).
--record(transaction_locked, {bucket, status}).
--record(commit_transaction, {txn_id, session}).
--record(rollback_transaction, {txn_id, session}).
+-include("operation.hrl").
+
+key(#get{key=Key}) ->
+    Key;
+key(#set{key=Key}) ->
+    Key;
+key(#delete{key=Key}) ->
+    Key.
+
+-include_lib("eunit/include/eunit.hrl").
+-ifdef(TEST).
+
+get_test() ->
+    getfoo = key(#get{key=getfoo}).
+
+set_test() ->
+    setfoo = key(#set{key=setfoo}).
+
+delete_test() ->
+    deletefoo = key(#delete{key=deletefoo}).
+
+-endif.
 

@@ -25,6 +25,7 @@
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
 
 -include("protocol.hrl").
+-include("operation.hrl").
 -include("dtm_redis.hrl").
 
 -record(transaction, {current, buckets}).
@@ -38,21 +39,21 @@ start_link(Client, #buckets{}=Buckets, Monitors) ->
     gen_server:start_link(?MODULE, #state{client=Client, buckets=Buckets, monitors=Monitors, stream=redis_protocol:init()}, []).
 
 get(Session, Key) ->
-    gen_server:call(Session, {Key, #get{key=Key}}).
+    gen_server:call(Session, #get{key=Key}).
 set(Session, Key, Value) ->
-    gen_server:call(Session, {Key, #set{key=Key, value=Value}}).
+    gen_server:call(Session, #set{key=Key, value=Value}).
 delete(Session, Key) ->
-    gen_server:call(Session, {Key, #delete{key=Key}}).
+    gen_server:call(Session, #delete{key=Key}).
 
 watch(Session, Key) ->
     gen_server:call(Session, {watch, Key}).
 unwatch(Session) ->
-    gen_server:call(Session, {unwatch}).
+    gen_server:call(Session, unwatch).
 
 multi(Session) ->
-    gen_server:call(Session, {multi}).
+    gen_server:call(Session, multi).
 exec(Session) ->
-    gen_server:call(Session, {exec}).
+    gen_server:call(Session, exec).
 
 % gen_server callbacks
 
@@ -62,14 +63,18 @@ init(#state{}=State) ->
 
 handle_call({watch, Key}, _From, State) ->
     handle_watch(State, Key);
-handle_call({unwatch}, _From, State) ->
+handle_call(unwatch, _From, State) ->
     handle_unwatch(State);
-handle_call({multi}, _From, State) ->
+handle_call(multi, _From, State) ->
     handle_multi(State);
-handle_call({exec}, _From, State) ->
+handle_call(exec, _From, State) ->
     handle_exec(State);
-handle_call({Key, Operation}, From, State) ->
-    handle_operation(State, From, Key, Operation);
+handle_call(#get{}=Get, From, State) ->
+    handle_operation(State, From, Get);
+handle_call(#set{}=Set, From, State) ->
+    handle_operation(State, From, Set);
+handle_call(#delete{}=Delete, From, State) ->
+    handle_operation(State, From, Delete);
 handle_call(Message, From, _State) ->
     error_logger:error_msg("session:handle_call unhandled message ~p from ~p", [Message, From]),
     erlang:throw({error, unhandled}).
@@ -190,13 +195,13 @@ handle_tcp_command(Client, State, {command, Name, Parameters}) ->
     case Lower of
         "get" ->
             [GetKey] = Parameters,
-            handle_operation(State, Client, GetKey, #get{key=GetKey});
+            handle_operation(State, Client, #get{key=GetKey});
         "set" ->
             [SetKey, SetValue] = Parameters,
-            handle_operation(State, Client, SetKey, #set{key=SetKey, value=SetValue});
+            handle_operation(State, Client, #set{key=SetKey, value=SetValue});
         "del" ->
             [DeleteKey] = Parameters,
-            handle_operation(State, Client, DeleteKey, #delete{key=DeleteKey});
+            handle_operation(State, Client, #delete{key=DeleteKey});
         "watch" ->
             [WatchKey] = Parameters,
             handle_watch(State, WatchKey);
@@ -219,12 +224,12 @@ send_operation_response(Client, {ok, Response}, #state{client=Client}=State) ->
     gen_tcp:send(Client, redis_protocol:format_response(Response)),
     {noreply, State}.
 
-handle_operation(#state{transaction=none}=State, From, Key, Operation) ->
-    Bucket = hash:worker_for_key(Key, State#state.buckets),
+handle_operation(#state{transaction=none}=State, From, Operation) ->
+    Bucket = hash:worker_for_key(operation:key(Operation), State#state.buckets),
     Response = gen_server:call(Bucket, #command{session=self(), operation=Operation}),
     send_operation_response(From, Response, State);
-handle_operation(#state{txn_id=TransactionId, transaction=Transaction}=State, From, Key, Operation) ->
-    Bucket = hash:worker_for_key(Key, State#state.buckets),
+handle_operation(#state{txn_id=TransactionId, transaction=Transaction}=State, From, Operation) ->
+    Bucket = hash:worker_for_key(operation:key(Operation), State#state.buckets),
     Response = gen_server:call(Bucket, #transact{txn_id=TransactionId, session=self(), operation_id=Transaction#transaction.current, operation=Operation}),
     Current = Transaction#transaction.current + 1,
     Buckets = sets:add_element(Bucket, Transaction#transaction.buckets),

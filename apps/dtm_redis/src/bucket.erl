@@ -25,6 +25,7 @@
 
 -include("dtm_redis.hrl").
 -include("protocol.hrl").
+-include("operation.hrl").
 -include("data_types.hrl").
 -include("store.hrl").
 
@@ -97,7 +98,7 @@ bucket_id(#state{name=Name}) ->
     Name.
 
 handle_command(#command{session=Session, operation=Operation}, From, #state{transactions=Transactions, store=Store}=State) ->
-    Current = get(operation_key(Operation)),
+    Current = get(operation:key(Operation)),
     case key_meta:is_locked(Current, Session) of
         true ->
             #key{locked=Locked} = Current,
@@ -178,13 +179,6 @@ remove_watches([{Key, _Version}|Remainder]) ->
     end,
     remove_watches(Remainder).
 
-operation_key(#get{key=Key}) ->
-    Key;
-operation_key(#set{key=Key}) ->
-    Key;
-operation_key(#delete{key=Key}) ->
-    Key.
-
 handle_lock_transaction(#lock_transaction{txn_id=TransactionId}, #state{transactions=Transactions, store=Store}=State) ->
     Transaction = dict:fetch(TransactionId, Transactions),
     WatchStatus = check_watches(Transaction#transaction.watches),
@@ -212,7 +206,7 @@ lock_keys(error, _, _) ->
 lock_keys(ok, [], _TransactionId) ->
     ok;
 lock_keys(ok, [{_Id, Operation}|Remainder], TransactionId) ->
-    Key = operation_key(Operation),
+    Key = operation:key(Operation),
     Current = get(Key),
     case key_meta:is_locked(Current, TransactionId) of
         true -> error;
@@ -244,7 +238,7 @@ apply_transaction(Store, #transaction{operations=Operations}=Transaction, Transa
 
 unlock_transaction(Store, #transaction{deferred=Deferred, locked=false}=Transaction) ->
     lists:foreach(fun({Session, Operation}) ->
-            handle_operation(Store, Session, Operation, get(operation_key(Operation)))
+            handle_operation(Store, Session, Operation, get(operation:key(Operation)))
         end, lists:reverse(Deferred)),
     Transaction#transaction{deferred=[]};
 unlock_transaction(Store, #transaction{operations=Operations}=Transaction) ->
@@ -254,7 +248,7 @@ unlock_transaction(Store, #transaction{operations=Operations}=Transaction) ->
 unlock_keys([]) ->
     ok;
 unlock_keys([{_Id, Operation}|Remainder]) ->
-    Key = operation_key(Operation),
+    Key = operation:key(Operation),
     put(Key, key_meta:unlock(get(Key))),
     unlock_keys(Remainder).
 
