@@ -1,5 +1,5 @@
 ## Name of the node
--name dtm_redis@127.0.0.1
+-sname dtm_redis
 
 ## Cookie for distributed erlang
 -setcookie dtm_redis

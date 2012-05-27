@@ -18,52 +18,42 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-.SUFFIXES: .erl .beam .yrl .c .o
+REBAR = bin/rebar
 
-ERL = erl -pa lib/eredis/ebin/ lib/erlymock/ebin/ apps/dtm_redis/ebin/ boot start_clean
+build:
+	${REBAR} compile
 
-CC = gcc
-CFLAGS = -std=gnu99 -g -O2 -fPIC -Ilib/hiredis/
-LFLAGS = -lpthread -lrt
-COMPILE = $(CC) $(CFLAGS)
+all: test-all bin/dtm-bench
 
-SRC_DIRS = .
-SOURCES = $(foreach dir, $(SRC_DIRS), $(wildcard $(dir)/*.erl))
-MODULES = $(patsubst %.erl, %, $(SOURCES))
+test: test-unit
 
-all: compile
+test-all: test-unit test-acceptance
 
-compile: dtm-redis dtm-bench
+test-unit:
+	${REBAR} eunit
 
-dtm-redis:
-	./rebar compile
+test-acceptance: generate
+	rel/dtm_redis/bin/dtm_redis start
+	bin/acceptance.escript dtm_redis@`hostname`
+	rel/dtm_redis/bin/dtm_redis stop
+
+generate: build
 	${RM} -rf rel/dtm_redis
-	./rebar generate
+	${REBAR} generate
 	mkdir rel/dtm_redis/binlog
 
-%.o : %.c
-	$(CC) $(CFLAGS) -c $<
-
-dtm-bench: dtm-bench.o
-	$(CC) dtm-bench.o lib/hiredis/libhiredis.a -o dtm-bench -lrt $(LFLAGS)
+bin/dtm-bench:
+	make -C dtm-bench
 
 clean:
-	${RM} apps/dtm_redis/ebin/*.beam *.o dtm-bench
-	${RM} -rf rel/dtm_redis/
+	${RM} apps/dtm_redis/.eunit/*
+	${RM} apps/dtm_redis/ebin/*.beam
+	${RM} -rf rel/dtm_redis*
+	make -C dtm-bench clean
 
-debug: compile
-	${ERL} -s dtm_redis start
+debug: generate
+	rel/dtm_redis/bin/dtm_redis start
 
-debug_server: compile
-	${ERL} -s dtm_redis server_start -extra config/single
-
-test: compile
-	mkdir -p binlog
-	erl -noshell -pa lib/eredis/ebin/ lib/erlymock/ebin/ apps/dtm_redis/ebin/ -eval 'eunit:test(hash,[verbose])' -s init stop
-	erl -noshell -pa lib/eredis/ebin/ lib/erlymock/ebin/ apps/dtm_redis/ebin/ -eval 'eunit:test(operation,[verbose])' -s init stop
-	erl -noshell -pa lib/eredis/ebin/ lib/erlymock/ebin/ apps/dtm_redis/ebin/ -eval 'eunit:test(txn_monitor,[verbose])' -s init stop
-	erl -noshell -pa lib/eredis/ebin/ lib/erlymock/ebin/ apps/dtm_redis/ebin/ -eval 'eunit:test(binlog,[verbose])' -s init stop
-	erl -noshell -pa lib/eredis/ebin/ lib/erlymock/ebin/ apps/dtm_redis/ebin/ -eval 'eunit:test(redis_store,[verbose])' -s init stop
-	erl -noshell -pa lib/eredis/ebin/ lib/erlymock/ebin/ apps/dtm_redis/ebin/ -eval 'eunit:test(redis_protocol,[verbose])' -s init stop
-	erl -noshell -pa lib/eredis/ebin/ lib/erlymock/ebin/ apps/dtm_redis/ebin/ -eval 'acceptance:test()' -s init stop
+#debug_server: compile
+#	${ERL} -s dtm_redis server_start -extra config/single
 
