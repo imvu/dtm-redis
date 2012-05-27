@@ -20,7 +20,7 @@
 
 -module(binlog).
 -behavior(gen_server).
--export([start_link/2, read/2, write/3, delete/2]).
+-export([start_link/2, read/2, write/3, delete/2, stop/1]).
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
 
 -record(operation, {requestor, id}).
@@ -28,8 +28,6 @@
 -record(read, {operation}).
 -record(write, {operation, data}).
 -record(delete, {operation}).
-
--include_lib("eunit/include/eunit.hrl").
 
 % API methods
 
@@ -123,8 +121,8 @@ write_to_file(FD, Operations, Data) ->
 
 % tests
 
--include_lib("eunit/include/eunit.hrl").
 -ifdef(TEST).
+-include_lib("eunit/include/eunit.hrl").
 
 test_start() ->
     random:seed(now()),
@@ -160,7 +158,6 @@ single_write_tuple_test() ->
     delete(test_binlog, OpId),
     {binlog_data_deleted, OpId, _Filename} = test_receive(),
     stop(test_binlog).
-
 
 single_multiple_at_once_test() ->
     test_start(),

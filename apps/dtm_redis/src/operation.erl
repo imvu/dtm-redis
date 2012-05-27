@@ -30,8 +30,8 @@ key(#set{key=Key}) ->
 key(#delete{key=Key}) ->
     Key.
 
--include_lib("eunit/include/eunit.hrl").
 -ifdef(TEST).
+-include_lib("eunit/include/eunit.hrl").
 
 get_test() ->
     getfoo = key(#get{key=getfoo}).
