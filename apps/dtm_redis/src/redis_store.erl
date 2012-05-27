@@ -30,8 +30,6 @@
 -record(transaction, {client, stored=[]}).
 -record(pipeline, {client, stored=[]}).
 
--include_lib("eunit/include/eunit.hrl").
-
 connect(Host, Port) ->
     {ok, Client} = eredis:start_link(Host, Port),
     #default{client=Client}.
@@ -130,32 +128,4 @@ store_operation(#transaction{stored=Stored}=Transaction, Operation) ->
     Transaction#transaction{stored=[Operation|Stored]};
 store_operation(#pipeline{stored=Stored}=Pipeline, Operation) ->
     Pipeline#pipeline{stored=[Operation|Stored]}.
-
-get_set_test() ->
-    C = connect("127.0.0.1", 6379),
-    redis_store:set(blah, C, "foo", "bar"),
-    redis_store:get(blah, C, "foo"),
-    success = test_receive([ok, <<"bar">>]).
-
-transaction_test() ->
-    C = connect("127.0.0.1", 6379),
-    Trans = transaction(C),
-    Trans2 = redis_store:set(Trans, "foo", "bar"),
-    Trans3 = redis_store:get(Trans2, "foo"),
-    commit(blah, Trans3),
-    success = test_receive([[ok, <<"bar">>]]).
-
-pipeline_test() ->
-    C = connect("127.0.0.1", 6379),
-    Pipe = pipeline(C),
-    Pipe2 = redis_store:set(Pipe, "foo", "bar"),
-    Pipe3 = redis_store:get(Pipe2, "foo"),
-    commit(blah, Pipe3),
-    success = test_receive([[ok, <<"bar">>]]).
-
-test_receive([]) ->
-    success;
-test_receive([Expected|T]) ->
-    {store_result, blah, Expected} = receive Any -> Any end,
-    test_receive(T).
 

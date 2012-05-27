@@ -24,7 +24,7 @@
 -include("dtm_redis.hrl").
 
 start(Config, BucketMap, Monitors) ->
-    io:format("starting dtm-redis server with pid ~p and ~p buckets~n", [self(), dict:size(BucketMap#buckets.map)]),
+    error_logger:info_msg("starting dtm-redis server with pid ~p and ~p buckets", [self(), dict:size(BucketMap#buckets.map)]),
     {ok, Listen} = gen_tcp:listen(Config#server.port, [binary, {backlog, Config#server.backlog}, {active, true}|iface(Config)]),
     loop(Listen, BucketMap, Monitors).
 

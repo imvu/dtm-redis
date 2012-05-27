@@ -65,7 +65,7 @@ start() ->
 server_start() ->
     [Filename|_] = init:get_plain_arguments(),
     {ok, [Config|_]} = file:consult(Filename),
-    io:format("starting dtm-redis using configuration ~p~n", [Config]),
+    error_logger:info_msg("starting dtm-redis using configuration ~p~n", [Config]),
     start(Config).
 
 start_bucket(#bucket{nodename=none}=Config) ->
