@@ -46,15 +46,15 @@ init_mode({ok, debug}) ->
     error_logger:info_msg("dtm_redis_sup starting in debug mode", []),
     {#buckets{}=Buckets, Monitors, Children} = debug_child_specs(),
     {ok, {{one_for_one, 5, 10}, Children ++ [
-        {shell, {session, start_link, [shell, Buckets, Monitors]}, permanent, 5000, worker, [session]},
+        {shell, {session, start_link, [Buckets, Monitors, shell]}, permanent, 5000, worker, [session]},
         {dtm_redis, {dtm_redis, start_link, []}, permanent, 5000, worker, [dtm_rdis]}
     ]}};
 init_mode({ok, debug_server}) ->
     error_logger:info_msg("dtm_redis_sup starting in debug_server mode", []),
     {#buckets{}=Buckets, Monitors, Children} = debug_child_specs(),
     {ok, {{one_for_one, 5, 10}, Children ++ [
-        {session_sup, {session_sup, start_link, []}, permanent, 5000, supervisor, [session_sup]},
-        {server, {server, start_link, [#server{port=6378}, Buckets, Monitors]}, permanent, 5000, worker, [server]}
+        {session_sup, {session_sup, start_link, [Buckets, Monitors]}, permanent, 5000, supervisor, [session_sup]},
+        {server, {server, start_link, [#server{port=6378}]}, permanent, 5000, worker, [server]}
     ]}};
 init_mode({ok, master}) ->
     {ok, {{one_for_one, 5, 10}, [

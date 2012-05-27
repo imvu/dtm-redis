@@ -33,9 +33,9 @@
 
 % API methods
 
-start_link(shell, #buckets{}=Buckets, Monitors) ->
+start_link(#buckets{}=Buckets, Monitors, shell) ->
     gen_server:start_link({local, shell}, ?MODULE, #state{client=shell, buckets=Buckets, monitors=Monitors}, []);
-start_link(Client, #buckets{}=Buckets, Monitors) ->
+start_link(#buckets{}=Buckets, Monitors, Client) ->
     gen_server:start_link(?MODULE, #state{client=Client, buckets=Buckets, monitors=Monitors, stream=redis_protocol:init()}, []).
 
 get(Session, Key) ->
@@ -221,10 +221,10 @@ handle_tcp_command(Client, State, {command, Name, Parameters}) ->
 
 send_operation_response(_From, Response, #state{client=shell}=State) ->
     {reply, Response, State};
-send_operation_response(Client, Response, #state{client=Client}=State) ->
+send_operation_response(Client, {ok, Response}, #state{client=Client}=State) ->
     gen_tcp:send(Client, redis_protocol:format_response(Response)),
     {noreply, State};
-send_operation_response(Client, {ok, Response}, #state{client=Client}=State) ->
+send_operation_response(Client, Response, #state{client=Client}=State) ->
     gen_tcp:send(Client, redis_protocol:format_response(Response)),
     {noreply, State}.
 

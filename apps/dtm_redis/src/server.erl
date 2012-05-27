@@ -20,27 +20,27 @@
 
 -module(server).
 -behavior(gen_server).
--export([start_link/3]).
+-export([start_link/1]).
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
 
 -include("dtm_redis.hrl").
 
--record(state, {listen=none, buckets, monitors}).
+-record(state, {listen=none}).
 
 -define(ACCEPT_TIMEOUT, 100).
 -define(SYSTEM_LIMIT_WAIT, 50).
 
 % API methods
 
-start_link(#server{}=Config, BucketMap, Monitors) ->
-    gen_server:start_link({local, ?MODULE}, ?MODULE, [Config, BucketMap, Monitors], []).
+start_link(#server{}=Config) ->
+    gen_server:start_link({local, ?MODULE}, ?MODULE, Config, []).
 
 % gen_server callbacks
 
-init([#server{port=Port, backlog=Backlog}=Config, #buckets{}=BucketMap, Monitors]) ->
+init(#server{port=Port, backlog=Backlog}=Config) ->
     error_logger:info_msg("starting server with pid ~p listening on port ~p", [self(), Port]),
     {ok, Listen} = gen_tcp:listen(Port, [binary, {backlog, Backlog}, {active, false} | iface(Config)]),
-    {ok, #state{listen=Listen, buckets=BucketMap, monitors=Monitors}, 0}.
+    {ok, #state{listen=Listen}, 0}.
 
 handle_call(Message, From, _State) ->
     error_logger:error_msg("server:handle_call unhandled message ~p from ~p", [Message, From]),
@@ -74,8 +74,8 @@ iface(#server{iface=Iface}) ->
     {ok, Addr} = inet_parse:address(Iface),
     [{ip, Addr}].
 
-handle_accept({ok, Client}, #state{buckets=BucketMap, monitors=Monitors}=State) ->
-    {ok, Session} = session_sup:start_session(Client, BucketMap, Monitors),
+handle_accept({ok, Client}, #state{}=State) ->
+    {ok, Session} = session_sup:start_session(Client),
     gen_tcp:controlling_process(Client, Session),
     inet:setopts(Client, [{active, once}]),
     {noreply, State, 0};
