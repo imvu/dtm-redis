@@ -21,7 +21,8 @@
 %% OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 %% SOFTWARE.
 
-main([Node]) ->
+main([Param]) when is_list(Param) ->
+	Node = list_to_atom(Param),
     io:format("Starting dtm-redis acceptance tests running on ~p~n", [Node]),
     connect(Node),
     find_shell(Node),
@@ -46,7 +47,7 @@ main(Any) ->
     halt(1).
 
 connect(Node) ->
-    connect(list_to_atom(Node), 5).
+    connect(Node, 5).
 
 connect(Node, 0) ->
     io:format("Unable to connect to node ~p~n", [Node]),
@@ -74,7 +75,7 @@ find_shell(Node) ->
         end,
         G(5, G)
     end,
-    Pid = spawn(list_to_atom(Node), F),
+    Pid = spawn(Node, F),
     Result = receive {Pid, Any} -> Any after 5000 -> timeout end,
     case Result of
         ok -> ok;
@@ -85,7 +86,7 @@ find_shell(Node) ->
 
 run_test(Node, Fun) ->
     Self = self(),
-    Pid = spawn(list_to_atom(Node), fun() ->
+    Pid = spawn(Node, fun() ->
             try
                 Fun(),
                 Self ! {self(), success}
