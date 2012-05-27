@@ -54,6 +54,9 @@ clean:
 debug: generate
 	rel/dtm_redis/bin/dtm_redis ocnsole
 
-#debug_server: compile
-#	${ERL} -s dtm_redis server_start -extra config/single
+debug-server: generate
+	rel/dtm_redis/bin/dtm_redis start -dtm_redis mode debug_server
+
+stop:
+	rel/dtm_redis/bin/dtm_redis stop
 

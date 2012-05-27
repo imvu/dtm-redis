@@ -261,7 +261,7 @@ map_result(error) ->
 map_result(Result) when is_integer(Result) ->
     Result;
 map_result(Result) ->
-    {ok, Result}.
+    Result.
 
 map_transaction_results(_Results, _Operations, error) ->
     error;

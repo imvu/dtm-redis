@@ -118,7 +118,7 @@ commit(Id, #pipeline{client=Client, stored=Operations}) ->
 
 dispatch_operation(Id, Client, Operation) ->
     Parent = self(),
-    spawn(fun() ->
+    spawn_link(fun() ->
             {Command, Handler} = Operation,
             Result = eredis:q(Client, Command),
             Parent ! #store_result{id=Id, result=Handler(Result)}

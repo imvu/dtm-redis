@@ -19,14 +19,52 @@
 %% SOFTWARE.
 
 -module(server).
--export([start/3]).
+-behavior(gen_server).
+-export([start_link/3]).
+-export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
 
 -include("dtm_redis.hrl").
 
-start(Config, BucketMap, Monitors) ->
-    error_logger:info_msg("starting dtm-redis server with pid ~p and ~p buckets", [self(), dict:size(BucketMap#buckets.map)]),
-    {ok, Listen} = gen_tcp:listen(Config#server.port, [binary, {backlog, Config#server.backlog}, {active, true}|iface(Config)]),
-    loop(Listen, BucketMap, Monitors).
+-record(state, {listen=none, buckets, monitors}).
+
+-define(ACCEPT_TIMEOUT, 100).
+-define(SYSTEM_LIMIT_WAIT, 50).
+
+% API methods
+
+start_link(#server{}=Config, BucketMap, Monitors) ->
+    gen_server:start_link({local, ?MODULE}, ?MODULE, [Config, BucketMap, Monitors], []).
+
+% gen_server callbacks
+
+init([#server{port=Port, backlog=Backlog}=Config, #buckets{}=BucketMap, Monitors]) ->
+    error_logger:info_msg("starting server with pid ~p listening on port ~p", [self(), Port]),
+    {ok, Listen} = gen_tcp:listen(Port, [binary, {backlog, Backlog}, {active, false} | iface(Config)]),
+    {ok, #state{listen=Listen, buckets=BucketMap, monitors=Monitors}, 0}.
+
+handle_call(Message, From, _State) ->
+    error_logger:error_msg("server:handle_call unhandled message ~p from ~p", [Message, From]),
+    erlang:throw({error, unhandled}).
+
+handle_cast(Message, _State) ->
+    error_logger:error_msg("server:handle_cast unhandled message ~p", [Message]),
+    erlang:throw({error, unhandled}).
+
+handle_info(timeout, #state{listen=Listen}=State) ->
+    handle_accept(gen_tcp:accept(Listen, ?ACCEPT_TIMEOUT), State);
+handle_info(Message, _State) ->
+    error_logger:error_msg("server:handle_info unhandled message ~p", [Message]),
+    erlang:throw({error, unhandled}).
+
+terminate(Reason, State) ->
+    error_logger:info_msg("terminating server with reason ~p", [Reason]),
+    close(State),
+    ok.
+
+code_change(_OldVsn, State, _Extra) ->
+    {ok, State}.
+
+% internal methods
 
 iface(#server{iface=all}) ->
     [];
@@ -36,9 +74,22 @@ iface(#server{iface=Iface}) ->
     {ok, Addr} = inet_parse:address(Iface),
     [{ip, Addr}].
 
-loop(Listen, BucketMap, Monitors) ->
-    {ok, Client} = gen_tcp:accept(Listen),
-    Pid = spawn(session, start, [Client, BucketMap, Monitors]),
-    gen_tcp:controlling_process(Client, Pid),
-    loop(Listen, BucketMap, Monitors).
+handle_accept({ok, Client}, #state{buckets=BucketMap, monitors=Monitors}=State) ->
+    {ok, Session} = session_sup:start_session(Client, BucketMap, Monitors),
+    gen_tcp:controlling_process(Client, Session),
+    inet:setopts(Client, [{active, once}]),
+    {noreply, State, 0};
+handle_accept({error, timeout}, #state{}=State) ->
+    {noreply, State, 0};
+handle_accept({error, system_limit}, #state{}=State) ->
+    error_logger:error_msg("maximum port count exceeded, not accepting new connections for ~p ms", [?SYSTEM_LIMIT_WAIT]),
+    {noreply, State, ?SYSTEM_LIMIT_WAIT};
+handle_accept({error, Reason}, #state{}=State) ->
+    error_logger:error_msg("stopping server because of accept error ~p", [Reason]),
+    {stop, Reason, State}.
+
+close(#state{listen=none}) ->
+    ok;
+close(#state{listen=Listen}) ->
+    gen_tcp:close(Listen).
 

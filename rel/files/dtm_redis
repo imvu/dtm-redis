@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 # -*- tab-width:4;indent-tabs-mode:nil -*-
 # ex: ts=4 sw=4 et
 
@@ -84,7 +84,7 @@ case "$1" in
             exit 1
         fi
         shift # remove $1
-        RUN_PARAM=$(printf "\'%s\' " "$@")
+        RUN_PARAM=$(printf "%s " "$@")
         HEART_COMMAND="$RUNNER_BASE_DIR/bin/$SCRIPT start $RUN_PARAM"
         export HEART_COMMAND
         mkdir -p $PIPE_DIR

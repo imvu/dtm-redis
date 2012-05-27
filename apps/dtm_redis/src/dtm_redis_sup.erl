@@ -20,33 +20,41 @@
 
 -module(dtm_redis_sup).
 -behavior(supervisor).
--export([start_link/0, init/1]).
+-export([start_link/0]).
+-export([init/1]).
 
 -include("dtm_redis.hrl").
+
+% API methods
 
 start_link() ->
     supervisor:start_link({local, ?MODULE}, ?MODULE, []).
 
+% supervisor callbacks
+
 init([]) ->
+    error_logger:info_msg("env ~p", [application:get_all_env()]),
     error_logger:info_msg("initializing dtm_redis_sup", []),
     init_mode(application:get_env(mode)).
+
+% internal methods
 
 init_mode(undefined) ->
     error_logger:info_msg("no mode specified for dtm_redis, assuming debug", []),
     init_mode({ok, debug});
 init_mode({ok, debug}) ->
     error_logger:info_msg("dtm_redis_sup starting in debug mode", []),
-    Bucket = #bucket{nodename=none, store_host="localhost", store_port=6379},
-    BucketMap = dict:from_list([{0, bucket0}, {1, bucket1}]),
-    Buckets = #buckets{bits=hash:bits(dict:size(BucketMap)), map=BucketMap},
-    {ok, {{one_for_one, 5, 10}, [
-        {monitor_binlog, {binlog, start_link, [monitor_binlog, "binlog/monitor.log"]}, permanent, 5000, worker, [binlog]},
-        {bucket_binlog, {binlog, start_link, [bucket_binlog, "binlog/bucket.log"]}, permanent, 5000, worker, [binlog]},
-        {monitor, {txn_monitor, start_link, [#monitor{}]}, permanent, 5000, worker, [txn_monitor]},
-        {bucket0, {bucket, start_link, [bucket0, Bucket]}, permanent, 5000, worker, [bucket]},
-        {bucket1, {bucket, start_link, [bucket1, Bucket]}, permanent, 5000, worker, [bucket]},
-        {shell, {session, start_link, [shell, Buckets, [txn_monitor]]}, permanent, 5000, worker, [session]},
+    {#buckets{}=Buckets, Monitors, Children} = debug_child_specs(),
+    {ok, {{one_for_one, 5, 10}, Children ++ [
+        {shell, {session, start_link, [shell, Buckets, Monitors]}, permanent, 5000, worker, [session]},
         {dtm_redis, {dtm_redis, start_link, []}, permanent, 5000, worker, [dtm_rdis]}
+    ]}};
+init_mode({ok, debug_server}) ->
+    error_logger:info_msg("dtm_redis_sup starting in debug_server mode", []),
+    {#buckets{}=Buckets, Monitors, Children} = debug_child_specs(),
+    {ok, {{one_for_one, 5, 10}, Children ++ [
+        {session_sup, {session_sup, start_link, []}, permanent, 5000, supervisor, [session_sup]},
+        {server, {server, start_link, [#server{port=6378}, Buckets, Monitors]}, permanent, 5000, worker, [server]}
     ]}};
 init_mode({ok, master}) ->
     {ok, {{one_for_one, 5, 10}, [
@@ -59,4 +67,17 @@ init_mode({ok, slave}) ->
 init_mode({ok, Other}) ->
     error_logger:error("dtm_redis application mode '~p' not supported", [Other]),
     {error, mode_not_supported}.
+
+debug_child_specs() ->
+    Bucket = #bucket{nodename=none, store_host="localhost", store_port=6379},
+    BucketMap = dict:from_list([{0, bucket0}, {1, bucket1}]),
+    Buckets = #buckets{bits=hash:bits(dict:size(BucketMap)), map=BucketMap},
+    Monitors = [txn_monitor],
+    {Buckets, Monitors, [
+        {monitor_binlog, {binlog, start_link, [monitor_binlog, "binlog/monitor.log"]}, permanent, 5000, worker, [binlog]},
+        {bucket_binlog, {binlog, start_link, [bucket_binlog, "binlog/bucket.log"]}, permanent, 5000, worker, [binlog]},
+        {monitor, {txn_monitor, start_link, [#monitor{}]}, permanent, 5000, worker, [txn_monitor]},
+        {bucket0, {bucket, start_link, [bucket0, Bucket]}, permanent, 5000, worker, [bucket]},
+        {bucket1, {bucket, start_link, [bucket1, Bucket]}, permanent, 5000, worker, [bucket]}
+    ]}.
 

@@ -83,7 +83,8 @@ handle_cast(Message, _State) ->
     error_logger:error_msg("session:handle_cast unhandled message ~p", [Message]),
     erlang:throw({error, unhandled}).
 
-handle_info({tcp, Client, Data}, State) ->
+handle_info({tcp, Client, Data}, #state{client=Client}=State) ->
+    inet:setopts(Client, [{active, once}]),
     {NewStream, Result} = redis_protocol:parse_stream(State#state.stream, Data),
     NewState = State#state{stream=NewStream},
     if
@@ -94,8 +95,11 @@ handle_info({tcp, Client, Data}, State) ->
         Result == incomplete ->
             {noreply, NewState}
     end;
-handle_info({tcp_closed, _Client}, State) ->
+handle_info({tcp_closed, Client}, #state{client=Client}=State) ->
     {stop, normal, State};
+handle_info({tcp_error, Reason, Client}, #state{client=Client}=State) ->
+    error_logger:error_msg("stopping session because of tcp error ~p", [Reason]),
+    {stop, Reason, State};
 handle_info(Message, _State) ->
     error_logger:error_msg("session:handle_info unhandled message ~p", [Message]),
     erlang:throw({error, unhandled}).
