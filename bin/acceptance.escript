@@ -24,7 +24,6 @@
 main([Param]) when is_list(Param) ->
 	Node = list_to_atom(Param),
     io:format("Starting dtm-redis acceptance tests running on ~p~n", [Node]),
-    connect(Node),
     find_shell(Node),
     Tests = [
         test_get_set(),
@@ -33,78 +32,25 @@ main([Param]) when is_list(Param) ->
         test_watch(),
         test_unwatch()
     ],
-    case lists:foldl(fun(Test, SoFar) -> combine_result(run_test(Node, Test), SoFar) end, success, Tests) of
-        success ->
-            io:format("All tests passed~n", []),
-            Result = 0;
-        failure ->
-            io:format("Test failure(s) detected~n", []),
-            Result = 1
-    end,
-    halt(Result);
+    lists:foreach(fun(Test) -> rpc:call(Node, erlang, apply, [Test, []]) end, Tests),
+    io:format("All tests passed~n", []);
 main(Any) ->
     io:format("Invalid program arugments ~p~n", [Any]),
     halt(1).
 
-connect(Node) ->
-    connect(Node, 5).
-
-connect(Node, 0) ->
-    io:format("Unable to connect to node ~p~n", [Node]),
-    halt(1);
-connect(Node, N) ->
-    case net_adm:ping(Node) of
-        pong -> ok;
-        pang ->
-            timer:sleep(50),
-            connect(Node, N - 1)
-    end.
-
 find_shell(Node) ->
-    Self = self(),
-    F = fun() ->
-        G = fun(0, _Next) ->
-                Self ! {self(), undefined};
-               (N, Next) ->
-            case whereis(shell) of
-                undefined ->
-                    timer:sleep(500),
-                    Next(N - 1, Next);
-                _Pid -> Self ! {self(), ok}
-            end
-        end,
-        G(5, G)
-    end,
-    Pid = spawn(Node, F),
-    Result = receive {Pid, Any} -> Any after 5000 -> timeout end,
-    case Result of
-        ok -> ok;
-        Else ->
-            io:format("Unable to locate shell on node ~p: ~p~n", [Node, Else]),
-            halt(1)
-    end.
+    find_shell(Node, 10).
 
-run_test(Node, Fun) ->
-    Self = self(),
-    Pid = spawn(Node, fun() ->
-            try
-                Fun(),
-                Self ! {self(), success}
-            catch Type:Reason ->
-                Self ! {self(), failure, Type, Reason}
-            end
-        end),
-    receive
-        {Pid, success} -> success;
-        {Pid, failure, Type, Reason} ->
-            io:format("test failed with ~p:~p~n", [Type, Reason]),
-            failure
-    after 5000 ->
-        timeout
+find_shell(Node, 0) ->
+    io:format("Unable to location shell on node ~p", [Node]),
+    halt(1);
+find_shell(Node, N) ->
+    case rpc:call(Node, erlang, whereis, [shell]) of
+        Pid when is_pid(Pid) -> ok;
+        _Else ->
+            timer:sleep(500),
+            find_shell(Node, N - 1)
     end.
-
-combine_result(success, success) -> success;
-combine_result(_Result, _SoFar) -> failure.
 
 test_get_set() ->
     fun() ->
