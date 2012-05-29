@@ -20,7 +20,7 @@
 
 -module(txn_monitor).
 -behavior(gen_server).
--export([start_link/1, allocate/1, persist/2, finalized/1]).
+-export([start_link/2, allocate/1, persist/2, finalized/1]).
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
 
 -include("dtm_redis.hrl").
@@ -34,8 +34,8 @@
 
 % API methods
 
-start_link(Binlog) ->
-    gen_server:start_link({local, ?MODULE}, ?MODULE, Binlog, []).
+start_link(Monitor, Binlog) ->
+    gen_server:start_link({local, Monitor}, ?MODULE, Binlog, []).
 
 allocate(Monitors) ->
     Monitor = lists:nth(random:uniform(length(Monitors)), Monitors),

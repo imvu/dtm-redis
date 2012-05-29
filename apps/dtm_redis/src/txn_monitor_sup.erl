@@ -39,10 +39,8 @@ init(Monitors) ->
     error_logger:info_msg("initializing txn_monitor_sup", []),
     {ok, {{one_for_one, 0, 1},
         lists:foldl(fun({local, _MonitorName, _BinlogName, _Monitor}=Monitor, Acc) ->
-                            {BinlogSpec, MonitorSpec} = binlog_monitor_specs(Monitor),
-                            [BinlogSpec, MonitorSpec | Acc];
-                       ({remote, _MonitorName, _BinlogName, _Monitor}, Acc) ->
-                            Acc
+                {BinlogSpec, MonitorSpec} = binlog_monitor_specs(Monitor),
+                [BinlogSpec, MonitorSpec | Acc]
             end, [], Monitors)}}.
 
 % internal functions
@@ -69,7 +67,7 @@ local_or_remote(#monitor{}) ->
 
 binlog_monitor_specs({local, MonitorName, BinlogName, #monitor{binlog=BinlogFile}}) ->
     {{BinlogName, {binlog, start_link, [BinlogName, BinlogFile]}, permanent, 5000, worker, [binlog]},
-     {MonitorName, {txn_monitor, start_link, [BinlogName]}, permanent, 5000, worker, [txn_monitor]}}.
+     {MonitorName, {txn_monitor, start_link, [MonitorName, BinlogName]}, permanent, 5000, worker, [txn_monitor]}}.
 
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
@@ -97,7 +95,7 @@ local_or_remote_different_node_test() ->
 binlog_monitor_spec_test() ->
     {Binlog, Monitor} = binlog_monitor_specs({local, monitor_name, binlog_name, #monitor{binlog=foobar}}),
     Binlog = {binlog_name, {binlog, start_link, [binlog_name, foobar]}, permanent, 5000, worker, [binlog]},
-    Monitor = {monitor_name, {txn_monitor, start_link, [binlog_name]}, permanent, 5000, worker, [txn_monitor]}.
+    Monitor = {monitor_name, {txn_monitor, start_link, [monitor_name, binlog_name]}, permanent, 5000, worker, [txn_monitor]}.
 
 -endif.
 

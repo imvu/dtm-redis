@@ -67,15 +67,16 @@ init_mode({ok, Other}) ->
     {error, mode_not_supported}.
 
 debug_child_specs() ->
-    Bucket = #bucket{nodename=none, store_host="localhost", store_port=6379},
-    BucketMap = dict:from_list([{0, bucket0}, {1, bucket1}]),
-    Buckets = #buckets{bits=hash:bits(dict:size(BucketMap)), map=BucketMap},
     MonitorConfig = [#monitor{nodename=none, binlog="binlog/monitor.log"}],
     Monitors = txn_monitor_sup:local_names(MonitorConfig),
+
+    Bucket = #bucket{nodename=none, store_host="localhost", store_port=6379},
+    BucketConfig = [Bucket#bucket{binlog="binlog/bucket0.log"}, Bucket#bucket{binlog="binlog/bucket1.log"}],
+    BucketMap = bucket_sup:bucket_map(BucketConfig),
+    Buckets = #buckets{bits=hash:bits(dict:size(BucketMap)), map=BucketMap},
+
     {Buckets, Monitors, [
         {txn_monitor_sup, {txn_monitor_sup, start_link, [MonitorConfig]}, permanent, 5000, supervisor, [txn_monitor_sup]},
-        {bucket_binlog, {binlog, start_link, [bucket_binlog, "binlog/bucket.log"]}, permanent, 5000, worker, [binlog]},
-        {bucket0, {bucket, start_link, [bucket0, Bucket]}, permanent, 5000, worker, [bucket]},
-        {bucket1, {bucket, start_link, [bucket1, Bucket]}, permanent, 5000, worker, [bucket]}
+        {bucket_sup, {bucket_sup, start_link, [BucketConfig]}, permanent, 5000, supervisor, [bucket_sup]}
     ]}.
 

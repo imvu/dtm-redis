@@ -20,7 +20,7 @@
 
 -module(bucket).
 -behavior(gen_server).
--export([start_link/1, start_link/2]).
+-export([start_link/3]).
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
 
 -include("dtm_redis.hrl").
@@ -29,25 +29,22 @@
 -include("data_types.hrl").
 -include("store.hrl").
 
--record(state, {name=none, transactions, store}).
+-record(state, {name=none, binlog, transactions, store}).
 -record(transaction, {session, operations=[], deferred=[], watches=[], locked=false}).
 
 -record(single_operation, {session}).
 -record(transaction_operation, {txn_id}).
 
-% api methods
+% API methods
 
-start_link(#bucket{}=Bucket) ->
-    gen_server:start_link(?MODULE, [none, Bucket], []).
-
-start_link(Name, #bucket{}=Bucket) ->
-    gen_server:start_link({local, Name}, ?MODULE, [Name, Bucket], []).
+start_link(Name, Binlog, #bucket{}=Bucket) ->
+    gen_server:start_link({local, Name}, ?MODULE, [Name, Binlog, Bucket], []).
 
 % gen_server callbacks
 
-init([Name, #bucket{store_host=Host, store_port=Port}]) ->
+init([Name, Binlog, #bucket{store_host=Host, store_port=Port}]) ->
     error_logger:info_msg("starting storage bucket with pid ~p and storage ~p:~p", [self(), Host, Port]),
-    {ok, #state{name=Name, transactions=dict:new(), store=redis_store:connect(Host, Port)}}.
+    {ok, #state{name=Name, binlog=Binlog, transactions=dict:new(), store=redis_store:connect(Host, Port)}}.
 
 handle_call(#command{}=Command, From, State) ->
     {noreply, handle_command(Command, From, State)};
@@ -179,13 +176,13 @@ remove_watches([{Key, _Version}|Remainder]) ->
     end,
     remove_watches(Remainder).
 
-handle_lock_transaction(#lock_transaction{txn_id=TransactionId}, #state{transactions=Transactions, store=Store}=State) ->
+handle_lock_transaction(#lock_transaction{txn_id=TransactionId}, #state{binlog=Binlog, transactions=Transactions, store=Store}=State) ->
     Transaction = dict:fetch(TransactionId, Transactions),
     WatchStatus = check_watches(Transaction#transaction.watches),
     LockStatus = lock_keys(WatchStatus, Transaction#transaction.operations, TransactionId),
     NewTransaction = case LockStatus of
         ok ->
-            binlog:write(bucket_binlog, {lock_txn, TransactionId}, Transaction),
+            binlog:write(Binlog, {lock_txn, TransactionId}, Transaction),
                 Transaction#transaction{locked=true};
         error ->
             Transaction#transaction.session ! #transaction_locked{bucket=bucket_id(State), status=LockStatus},
@@ -218,11 +215,11 @@ lock_keys(ok, [{_Id, Operation}|Remainder], TransactionId) ->
             end
     end.
 
-handle_rollback_transaction(#rollback_transaction{txn_id=TransactionId}, #state{transactions=Transactions, store=Store}=State) ->
+handle_rollback_transaction(#rollback_transaction{txn_id=TransactionId}, #state{binlog=Binlog, transactions=Transactions, store=Store}=State) ->
     Transaction = dict:fetch(TransactionId, Transactions),
     unlock_transaction(Store, Transaction),
     remove_watches(Transaction#transaction.watches),
-    binlog:write(bucket_binlog, {delete, TransactionId}, "Bucket rollback transaction"),
+    binlog:write(Binlog, {delete, TransactionId}, "Bucket rollback transaction"),
     State#state{transactions=dict:erase(TransactionId, Transactions)}.
 
 handle_commit_transaction(#commit_transaction{txn_id=TransactionId}, #state{transactions=Transactions, store=Store}=State) ->
@@ -273,10 +270,10 @@ map_transaction_results([Result|ResultsTail], [{Order, _Operation}|OperationsTai
 handle_store_result(#single_operation{session=From}, Result, State) ->
     gen_server:reply(From, map_result(Result)),
     State;
-handle_store_result(#transaction_operation{txn_id=TransactionId}, Results, #state{transactions=Transactions}=State) ->
+handle_store_result(#transaction_operation{txn_id=TransactionId}, Results, #state{binlog=Binlog, transactions=Transactions}=State) ->
     {ok, Transaction} = dict:find(TransactionId, Transactions),
     Transaction#transaction.session ! {bucket_id(State), map_transaction_results(Results, lists:reverse(Transaction#transaction.operations), [])},
     remove_watches(Transaction#transaction.watches),
     txn_monitor:finalized(TransactionId),
-    binlog:write(bucket_binlog, {delete, TransactionId}, "Bucket stored transaction"),
+    binlog:write(Binlog, {delete, TransactionId}, "Bucket stored transaction"),
     State#state{transactions=dict:erase(TransactionId, Transactions)}.
