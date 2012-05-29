@@ -33,7 +33,6 @@ start_link() ->
 % supervisor callbacks
 
 init([]) ->
-    error_logger:info_msg("env ~p", [application:get_all_env()]),
     error_logger:info_msg("initializing dtm_redis_sup", []),
     init_mode(application:get_env(mode)).
 
@@ -46,8 +45,7 @@ init_mode({ok, debug}) ->
     error_logger:info_msg("dtm_redis_sup starting in debug mode", []),
     {#buckets{}=Buckets, Monitors, Children} = debug_child_specs(),
     {ok, {{one_for_one, 5, 10}, Children ++ [
-        {shell, {session, start_link, [Buckets, Monitors, shell]}, permanent, 5000, worker, [session]},
-        {dtm_redis, {dtm_redis, start_link, []}, permanent, 5000, worker, [dtm_rdis]}
+        {shell, {session, start_link, [Buckets, Monitors, shell]}, permanent, 5000, worker, [session]}
     ]}};
 init_mode({ok, debug_server}) ->
     error_logger:info_msg("dtm_redis_sup starting in debug_server mode", []),
@@ -72,11 +70,11 @@ debug_child_specs() ->
     Bucket = #bucket{nodename=none, store_host="localhost", store_port=6379},
     BucketMap = dict:from_list([{0, bucket0}, {1, bucket1}]),
     Buckets = #buckets{bits=hash:bits(dict:size(BucketMap)), map=BucketMap},
-    Monitors = [txn_monitor],
+    MonitorConfig = [#monitor{nodename=none, binlog="binlog/monitor.log"}],
+    Monitors = txn_monitor_sup:local_names(MonitorConfig),
     {Buckets, Monitors, [
-        {monitor_binlog, {binlog, start_link, [monitor_binlog, "binlog/monitor.log"]}, permanent, 5000, worker, [binlog]},
+        {txn_monitor_sup, {txn_monitor_sup, start_link, [MonitorConfig]}, permanent, 5000, supervisor, [txn_monitor_sup]},
         {bucket_binlog, {binlog, start_link, [bucket_binlog, "binlog/bucket.log"]}, permanent, 5000, worker, [binlog]},
-        {monitor, {txn_monitor, start_link, [#monitor{}]}, permanent, 5000, worker, [txn_monitor]},
         {bucket0, {bucket, start_link, [bucket0, Bucket]}, permanent, 5000, worker, [bucket]},
         {bucket1, {bucket, start_link, [bucket1, Bucket]}, permanent, 5000, worker, [bucket]}
     ]}.

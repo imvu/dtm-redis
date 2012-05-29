@@ -29,13 +29,13 @@
 -record(txn_id, {monitor, id}).
 -record(finalized, {id, bucket}).
 
--record(state, {next_id=1, transactions}).
+-record(state, {next_id=1, binlog, transactions}).
 -record(transaction, {session, buckets}).
 
 % API methods
 
-start_link(#monitor{}=Monitor) ->
-    gen_server:start_link({local, ?MODULE}, ?MODULE, Monitor, []).
+start_link(Binlog) ->
+    gen_server:start_link({local, ?MODULE}, ?MODULE, Binlog, []).
 
 allocate(Monitors) ->
     Monitor = lists:nth(random:uniform(length(Monitors)), Monitors),
@@ -50,9 +50,9 @@ finalized(#txn_id{}=Id) ->
 
 % gen_server callbacks
 
-init(#monitor{}) ->
+init(Binlog) ->
     error_logger:info_msg("starting txn_monitor with pid ~p", [self()]),
-    {ok, #state{transactions=dict:new()}}.
+    {ok, #state{binlog=Binlog, transactions=dict:new()}}.
 
 handle_call(allocate, _From, State) ->
     {Id, NewState} = handle_allocate(State),
@@ -94,20 +94,20 @@ handle_allocate(#state{}=State) ->
     Id = State#state.next_id,
     {Id, State#state{next_id=Id+1}}.
 
-handle_persist(#persist{id=Id, buckets=Buckets}, From, #state{}=State) ->
+handle_persist(#persist{id=Id, buckets=Buckets}, From, #state{binlog=Binlog}=State) ->
     true = sets:is_set(Buckets),
-    binlog:write(monitor_binlog, {persist, Id}, 'Write TXN_LOG'),
-    State#state{transactions=update_transaction(Id, #transaction{session=From, buckets=Buckets}, State#state.transactions)}.
+    binlog:write(Binlog, {persist, Id}, 'Write TXN_LOG'),
+    State#state{transactions=update_transaction(Id, #transaction{session=From, buckets=Buckets}, State)}.
 
 handle_finalize(#finalized{id=Id, bucket=Bucket}, #state{}=State) ->
     Transaction = dict:fetch(Id, State#state.transactions),
     Buckets = sets:del_element(Bucket, Transaction#transaction.buckets),
-    State#state{transactions=update_transaction(Id, Transaction#transaction{buckets=Buckets}, State#state.transactions)}.
+    State#state{transactions=update_transaction(Id, Transaction#transaction{buckets=Buckets}, State)}.
 
-update_transaction(Id, #transaction{buckets=Buckets}=Transaction, Transactions) ->
+update_transaction(Id, #transaction{buckets=Buckets}=Transaction, #state{binlog=Binlog, transactions=Transactions}) ->
     case sets:size(Buckets) of
         0 ->
-	    binlog:write(monitor_binlog, {delete, Id}, 'Delete TXN_LOG'),
+	    binlog:write(Binlog, {delete, Id}, 'Delete TXN_LOG'),
             dict:erase(Id, Transactions);
         _Any -> dict:store(Id, Transaction, Transactions)
     end.
