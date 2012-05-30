@@ -50,9 +50,11 @@ init_mode({ok, debug}) ->
 init_mode({ok, debug_server}) ->
     error_logger:info_msg("dtm_redis_sup starting in debug_server mode", []),
     {#buckets{}=Buckets, Monitors, Children} = debug_child_specs(),
+    ServerConfig = [#server{port=6378}],
+
     {ok, {{one_for_one, 5, 10}, Children ++ [
         {session_sup, {session_sup, start_link, [Buckets, Monitors]}, permanent, 5000, supervisor, [session_sup]},
-        {server, {server, start_link, [#server{port=6378}]}, permanent, 5000, worker, [server]}
+        {server_sup, {server_sup, start_link, [ServerConfig]}, permanent, 5000, worker, [server_sup]}
     ]}};
 init_mode({ok, master}) ->
     {ok, {{one_for_one, 5, 10}, [
