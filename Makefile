@@ -52,7 +52,7 @@ clean:
 	make -C dtm-bench clean
 
 debug: generate
-	rel/dtm_redis/bin/dtm_redis ocnsole
+	rel/dtm_redis/bin/dtm_redis console
 
 debug-server: generate
 	rel/dtm_redis/bin/dtm_redis start -dtm_redis mode debug_server
