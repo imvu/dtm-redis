@@ -21,13 +21,12 @@
 -module(redis_store).
 -export([connect/2]).
 -export([get/2, get/3, set/3, set/4, delete/3]).
--export([pipeline/1, transaction/1, commit/2]).
+-export([pipeline/1, commit/2]).
 -compile(export_all).
 
 -include("store.hrl").
 
 -record(default, {client}).
--record(transaction, {client, stored=[]}).
 -record(pipeline, {client, stored=[]}).
 
 connect(Host, Port) ->
@@ -47,8 +46,6 @@ get_operation(Key) ->
 get(Id, #default{client=Client}, Key) ->
     dispatch_operation(Id, Client, get_operation(Key)).
 
-get(#transaction{}=State, Key) ->
-    store_operation(State, get_operation(Key));
 get(#pipeline{}=State, Key) ->
     store_operation(State, get_operation(Key)).
 
@@ -63,8 +60,6 @@ set_operation(Key, Value) ->
 set(Id, #default{client=Client}, Key, Value) ->
     dispatch_operation(Id, Client, set_operation(Key, Value)).
 
-set(#transaction{}=State, Key, Value) ->
-    store_operation(State, set_operation(Key, Value));
 set(#pipeline{}=State, Key, Value) ->
     store_operation(State, set_operation(Key, Value)).
 
@@ -79,13 +74,8 @@ delete_operation(Key) ->
 delete(Id, #default{client=Client}, Key) ->
     dispatch_operation(Id, Client, delete_operation(Key)).
 
-delete(#transaction{}=State, Key) ->
-    store_operation(State, delete_operation(Key));
 delete(#pipeline{}=State, Key) ->
     store_operation(State, delete_operation(Key)).
-
-transaction(#default{client=Client}) ->
-    #transaction{client=Client}.
 
 pipeline(#default{client=Client}) ->
     #pipeline{client=Client}.
@@ -95,19 +85,6 @@ map_bulk_results([], [], Results) ->
 map_bulk_results([Result|ResultsTail], [Handler|HandlersTail], Results) ->
     map_bulk_results(ResultsTail, HandlersTail, [Handler(Result)|Results]).
 
-commit(Id, #transaction{client=Client, stored=Operations}) ->
-    Parent = self(),
-    {Commands, Handlers} = lists:foldl(fun({C, H}, {C0, H0}) -> {[C|C0], [H|H0]} end, {[], []}, Operations),
-    spawn(fun() ->
-            {ok, <<"OK">>} = eredis:q(Client, ["MULTI"]),
-            lists:foreach(fun(Command) -> {ok, <<"QUEUED">>} = eredis:q(Client, Command) end, Commands),
-            MultiResults = eredis:q(Client, ["EXEC"]),
-            Results = case MultiResults of
-                {ok, ResultList} -> lists:reverse(map_bulk_results(ResultList, Handlers, []));
-                _Else -> error
-            end,
-            Parent ! #store_result{id=Id, result=Results}
-        end);
 commit(Id, #pipeline{client=Client, stored=Operations}) ->
     Parent = self(),
     {Commands, Handlers} = lists:foldl(fun({C, H}, {C0, H0}) -> {[C|C0], [H|H0]} end, {[], []}, Operations),
@@ -124,8 +101,6 @@ dispatch_operation(Id, Client, Operation) ->
             Parent ! #store_result{id=Id, result=Handler(Result)}
         end).
 
-store_operation(#transaction{stored=Stored}=Transaction, Operation) ->
-    Transaction#transaction{stored=[Operation|Stored]};
 store_operation(#pipeline{stored=Stored}=Pipeline, Operation) ->
     Pipeline#pipeline{stored=[Operation|Stored]}.
 
