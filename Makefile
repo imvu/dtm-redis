@@ -23,7 +23,7 @@
 ERL = erl -pa lib/eredis/ebin/ lib/erlymock/ebin/ apps/dtm_redis/ebin/ boot start_clean
 
 CC = gcc
-CFLAGS = -std=gnu99 -g -O2 -fPIC -Ilib/hiredis/
+CFLAGS = -std=gnu99 -g -O2 -fPIC -Ilib/hiredis2/
 LFLAGS = -lpthread -lrt
 COMPILE = $(CC) $(CFLAGS)
 
@@ -42,7 +42,7 @@ rebar:
 	$(CC) $(CFLAGS) -c $<
 
 dtm-bench: dtm-bench.o
-	$(CC) dtm-bench.o lib/hiredis/libhiredis.a -o dtm-bench -lrt $(LFLAGS)
+	$(CC) dtm-bench.o lib/hiredis2/libhiredis.a -o dtm-bench -lrt $(LFLAGS)
 
 clean:
 	${RM} apps/dtm_redis/ebin/*.beam *.o dtm-bench

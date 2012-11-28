@@ -4,3 +4,6 @@
 [submodule "lib/erlymock"]
 	path = lib/erlymock
 	url = https://github.com/nialscorva/erlymock.git
+[submodule "lib/hiredis2"]
+	path = lib/hiredis2
+	url = https://github.com/redis/hiredis.git
