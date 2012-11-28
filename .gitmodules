@@ -4,6 +4,3 @@
 [submodule "lib/erlymock"]
 	path = lib/erlymock
 	url = https://github.com/nialscorva/erlymock.git
-[submodule "lib/hiredis"]
-	path = lib/hiredis
-	url = https://github.com/antirez/hiredis.git
