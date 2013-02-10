@@ -30,7 +30,7 @@ test: test-unit
 test-all: test-unit test-acceptance
 
 test-unit:
-	${REBAR} eunit
+	${REBAR} eunit skip_deps=true
 
 test-acceptance: generate
 	rel/dtm_redis/bin/dtm_redis start
