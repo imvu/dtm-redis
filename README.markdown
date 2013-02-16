@@ -19,21 +19,25 @@ $ git clone https://github.com/imvu/dtm-redis
 $ cd dtm-redis
 $ git submodule init
 $ git submodule update
-$ cd lib/eredis/
-$ ./rebar compile
-$ cd ../erlymock/
-$ ./rebar compile
-$ cd ../hiredis/
-$ make
-$ cd ../..
 $ make
 </pre>
 
 Running Tests
 =============
 
+Unit tests can be run like so:
 <pre>
-$ make test
+$ make test-unit
+</pre>
+
+Acceptance tests can be run like so:
+<pre>
+$ make test-acceptance
+</pre>
+
+Run both unit tests and acceptance tests like so:
+<pre>
+$ make test-all
 </pre>
 
 Testing from the command line
@@ -57,9 +61,9 @@ Now you should be able to issue any of the supported commands directly in the er
 
 <pre>
 1> dtm_redis:set("foo", "bar").
-ok
+{ok,[ok]}
 2> dtm_redis:get("foo").
-{ok,<<"bar">>}
+{ok,[<<"bar">>]}
 3>
 </pre>
 
@@ -72,13 +76,15 @@ The following command will start a single host dtm-redis cluster using the confi
 $ make debug_server
 </pre>
 
-Now in a separate shell you should be able to connect to dtm-redis like so:
+Now you should be able to connect to dtm-redis like so:
 
 <pre>
 $ redis-cli -h localhost -p 6378
-redis localhost:6378> get foo
-"bar"
-redis localhost:6378>
+redis> set foo bar
+1) OK
+redis> get foo
+1) "bar"
+redis>
 </pre>
 
 Running a distributed cluster
