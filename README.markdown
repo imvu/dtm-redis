@@ -108,23 +108,23 @@ Now from a separate shell (on any host) connect to the dtm-redis cluster like so
 
 <pre>
 $ redis-cli -h host1 -p 6379
-redis host1:6379> set foo bar
-OK
-redis host1:6379> get foo
-"bar"
-redis host1:6379> watch foo
-OK
-redis host1:6379> set foo baz
-OK
-redis host1:6379> multi
-OK
-redis host1:6379> set foo bar
-QUEUED
-redis host1:6379> exec
-(nil)
-redis host1:6379> get foo
-"baz"
-redis host1:6379>
+redis> set foo bar
+1) OK
+redis> get foo
+1) "bar"
+redis> watch foo
+1) OK
+redis> set foo baz
+1) OK
+redis> multi
+1) OK
+redis> set foo bar
+1) QUEUED
+redis> exec
+1) (nil)
+redis> get foo
+1) "baz"
+redis>
 </pre>
 
 Benchmarking
