@@ -68,17 +68,17 @@ handle_cast(Message, _State) ->
     error_logger:error_msg("bucket:handle_cast unhandled message ~p", [Message]),
     erlang:throw({error, unhandled}).
 
-handle_info(#store_result{id=Id, result=Result}, State) ->
-    {noreply, handle_store_result(Id, Result, State)};
 handle_info({binlog_data_written, {lock_txn, Id}}, State) ->
     {ok, Transaction} = dict:find(Id, State#state.transactions),
     Transaction#transaction.session ! #transaction_locked{bucket=bucket_id(State), status=Transaction#transaction.locked},
     {noreply, State};
 handle_info({binlog_data_written, {delete, _Id}}, State) ->
     {noreply, State};
-handle_info(Message, _State) ->
-    error_logger:error_msg("bucket:handle_info unhandled message ~p", [Message]),
-    erlang:throw({error, unhandled}).
+handle_info(Message, #state{store=Store}=State) ->
+    {Results, NewStore} = redis_store:handle_info(Message, Store),
+    {noreply, lists:foldl(fun(#store_result{id=Id, result=Result}, S) ->
+            handle_store_result(Id, Result, S)
+        end, State#state{store=NewStore}, Results)}.
 
 terminate(Reason, _State) ->
     error_logger:info_msg("terminating bucket with reason ~p", [Reason]),
@@ -103,8 +103,7 @@ handle_command(#command{session=Session, operation=Operation}, From, #state{tran
             NewTransaction = Transaction#transaction{deferred=[{From, Operation}|Deferred]},
             State#state{transactions=dict:store(Locked, NewTransaction, Transactions)};
         false ->
-            handle_operation(Store, From, Operation, Current),
-            State
+            State#state{store=handle_operation(Store, From, Operation, Current)}
     end.
 
 update_meta(Key, Current) ->
@@ -180,15 +179,15 @@ handle_lock_transaction(#lock_transaction{txn_id=TransactionId}, #state{binlog=B
     Transaction = dict:fetch(TransactionId, Transactions),
     WatchStatus = check_watches(Transaction#transaction.watches),
     LockStatus = lock_keys(WatchStatus, Transaction#transaction.operations, TransactionId),
-    NewTransaction = case LockStatus of
+    {NewTransaction, NewStore} = case LockStatus of
         ok ->
             binlog:write(Binlog, {lock_txn, TransactionId}, Transaction),
-                Transaction#transaction{locked=true};
+            {Transaction#transaction{locked=true}, Store};
         error ->
             Transaction#transaction.session ! #transaction_locked{bucket=bucket_id(State), status=LockStatus},
-                unlock_transaction(Store, Transaction#transaction{locked=false})
+            unlock_transaction(Store, Transaction#transaction{locked=false})
     end,
-    State#state{transactions=dict:store(TransactionId, NewTransaction, State#state.transactions)}.
+    State#state{transactions=dict:store(TransactionId, NewTransaction, State#state.transactions), store=NewStore}.
 
 check_watches([]) ->
     ok;
@@ -217,27 +216,28 @@ lock_keys(ok, [{_Id, Operation}|Remainder], TransactionId) ->
 
 handle_rollback_transaction(#rollback_transaction{txn_id=TransactionId}, #state{binlog=Binlog, transactions=Transactions, store=Store}=State) ->
     Transaction = dict:fetch(TransactionId, Transactions),
-    unlock_transaction(Store, Transaction),
+    {_, NewStore} = unlock_transaction(Store, Transaction),
     remove_watches(Transaction#transaction.watches),
     binlog:write(Binlog, {delete, TransactionId}, "Bucket rollback transaction"),
-    State#state{transactions=dict:erase(TransactionId, Transactions)}.
+    State#state{transactions=dict:erase(TransactionId, Transactions), store=NewStore}.
 
 handle_commit_transaction(#commit_transaction{txn_id=TransactionId}, #state{transactions=Transactions, store=Store}=State) ->
     Transaction = dict:fetch(TransactionId, Transactions),
-    apply_transaction(Store, Transaction, TransactionId),
-    State.
+    NewStore = apply_transaction(Store, Transaction, TransactionId),
+    State#state{store=NewStore}.
 
 apply_transaction(Store, #transaction{operations=Operations}=Transaction, TransactionId) ->
     Pipe = redis_store:pipeline(Store),
     Pipe2 = lists:foldr(fun({_Order, O}, P) -> handle_batch_operation(P, O) end, Pipe, Operations),
-    redis_store:commit(#transaction_operation{txn_id=TransactionId}, Pipe2),
-    unlock_transaction(Store, Transaction).
+    NewStore = redis_store:commit(#transaction_operation{txn_id=TransactionId}, Pipe2),
+    {_Transaction, NewNewStore} = unlock_transaction(NewStore, Transaction),
+    NewNewStore.
 
 unlock_transaction(Store, #transaction{deferred=Deferred, locked=false}=Transaction) ->
-    lists:foreach(fun({Session, Operation}) ->
-            handle_operation(Store, Session, Operation, get(operation:key(Operation)))
-        end, lists:reverse(Deferred)),
-    Transaction#transaction{deferred=[]};
+    NewStore = lists:foldl(fun({Session, Operation}, S) ->
+            handle_operation(S, Session, Operation, get(operation:key(Operation)))
+        end, Store, lists:reverse(Deferred)),
+    {Transaction#transaction{deferred=[]}, NewStore};
 unlock_transaction(Store, #transaction{operations=Operations}=Transaction) ->
     unlock_keys(Operations),
     unlock_transaction(Store, Transaction#transaction{locked=false}).
