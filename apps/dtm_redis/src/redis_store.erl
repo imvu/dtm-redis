@@ -116,17 +116,17 @@ make_command_with_key_and_args_test() ->
 get_default_test() ->
     State = connect(test_host, test_port),
     State2 = handle_operation(42, State, #operation{command= <<"GET">>, key= <<"foo">>, arguments=[]}),
-    {[#store_result{id=42, result=#bulk_reply{content= <<"bar">>}}], State} = handle_info({tcp, test_socket, <<"$3\r\nbar\r\n">>}, State2).
+    {[#store_result{id=42, result=#redis_bulk{content= <<"bar">>}}], State} = handle_info({tcp, test_socket, <<"$3\r\nbar\r\n">>}, State2).
 
 set_default_test() ->
     State = connect(test_host, test_port),
     State2 = handle_operation(42, State, #operation{command= <<"SET">>, key = <<"foo">>, arguments=[<<"bar">>]}),
-    {[#store_result{id=42, result=#status_reply{message= <<"OK">>}}], State} = handle_info({tcp, test_socket, <<"+OK\r\n">>}, State2).
+    {[#store_result{id=42, result=#redis_status{message= <<"OK">>}}], State} = handle_info({tcp, test_socket, <<"+OK\r\n">>}, State2).
 
 delete_default_test() ->
     State = connect(test_host, test_port),
     State2 = handle_operation(42, State, #operation{command= <<"DEL">>, key= <<"foo">>, arguments=[]}),
-    {[#store_result{id=42, result=#integer_reply{value= <<"1">>}}], State} = handle_info({tcp, test_socket, <<":1\r\n">>}, State2).
+    {[#store_result{id=42, result=#redis_integer{value= <<"1">>}}], State} = handle_info({tcp, test_socket, <<":1\r\n">>}, State2).
 
 -endif.
 

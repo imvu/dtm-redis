@@ -70,18 +70,18 @@ make_operation(Command, none, []) ->
 make_operation(Command, Key, Arguments) ->
     #operation{command=Command, key=redis_stream:make_binary(Key), arguments=[redis_stream:make_binary(Arg) || Arg <- Arguments]}.
 
--spec show_reply(simple_reply() | #multi_bulk_reply{}) -> display_status() | display_integer() | display_value() | display_list() | display_multi().
-show_reply(#status_reply{message=Message}) ->
+-spec show_reply(redis_simple() | #redis_multi_bulk{}) -> display_status() | display_integer() | display_value() | display_list() | display_multi().
+show_reply(#redis_status{message=Message}) ->
     status_to_atom(Message);
-show_reply(#error_reply{type=Type, message=Message}) ->
+show_reply(#redis_error{type=Type, message=Message}) ->
     lists:flatten(io_lib:format("error ~s ~s", [binary_to_list(Type), binary_to_list(Message)]));
-show_reply(#integer_reply{value=Value}) ->
+show_reply(#redis_integer{value=Value}) ->
     list_to_integer(binary_to_list(Value));
-show_reply(#bulk_reply{content=none}) ->
+show_reply(#redis_bulk{content=none}) ->
     nil;
-show_reply(#bulk_reply{content=Content}) ->
+show_reply(#redis_bulk{content=Content}) ->
     binary_to_list(Content);
-show_reply(#multi_bulk_reply{items=Items}) ->
+show_reply(#redis_multi_bulk{items=Items}) ->
     [show_reply(X) || X <- Items];
 show_reply(Replies) when is_list(Replies) ->
     [show_reply(X) || X <- Replies].
@@ -103,35 +103,35 @@ make_command_with_key_and_arguments_test() ->
     #operation{command= <<"foo">>, key= <<"bar">>, arguments=[<<"baz">>]} = make_operation(<<"foo">>, <<"bar">>, [<<"baz">>]).
 
 show_status_reply_test() ->
-    ok = show_reply(#status_reply{message= <<"OK">>}),
-    stored = show_reply(#status_reply{message= <<"STORED">>}).
+    ok = show_reply(#redis_status{message= <<"OK">>}),
+    stored = show_reply(#redis_status{message= <<"STORED">>}).
 
 show_error_reply_test() ->
-    "error ERR foo bar baz" = show_reply(#error_reply{type= <<"ERR">>, message= <<"foo bar baz">>}).
+    "error ERR foo bar baz" = show_reply(#redis_error{type= <<"ERR">>, message= <<"foo bar baz">>}).
 
 show_integer_reply_test() ->
-    0 = show_reply(#integer_reply{value= <<"0">>}),
-    1 = show_reply(#integer_reply{value= <<"1">>}),
-    42 = show_reply(#integer_reply{value= <<"42">>}).
+    0 = show_reply(#redis_integer{value= <<"0">>}),
+    1 = show_reply(#redis_integer{value= <<"1">>}),
+    42 = show_reply(#redis_integer{value= <<"42">>}).
 
 show_bulk_reply_test() ->
-    "foo" = show_reply(#bulk_reply{content= <<"foo">>}).
+    "foo" = show_reply(#redis_bulk{content= <<"foo">>}).
 
 show_empty_bulk_reply_test() ->
-    nil = show_reply(#bulk_reply{content=none}).
+    nil = show_reply(#redis_bulk{content=none}).
 
 show_multi_bulk_reply_test() ->
-    [ok, 1, "foo"] = show_reply(#multi_bulk_reply{count=3, items=[
-        #status_reply{message= <<"OK">>},
-        #integer_reply{value= <<"1">>},
-        #bulk_reply{content= <<"foo">>}
+    [ok, 1, "foo"] = show_reply(#redis_multi_bulk{count=3, items=[
+        #redis_status{message= <<"OK">>},
+        #redis_integer{value= <<"1">>},
+        #redis_bulk{content= <<"foo">>}
     ]}).
 
 show_multi_replies_test() ->
     [ok, 1, "foo"] = show_reply([
-        #status_reply{message= <<"OK">>},
-        #integer_reply{value= <<"1">>},
-        #bulk_reply{content= <<"foo">>}
+        #redis_status{message= <<"OK">>},
+        #redis_integer{value= <<"1">>},
+        #redis_bulk{content= <<"foo">>}
     ]).
 
 -endif.

@@ -59,31 +59,31 @@
 
 % reply records
 
--record(status_reply, {
+-record(redis_status, {
     message :: binary()
 }).
 
--record(error_reply, {
+-record(redis_error, {
     type :: binary(),
     message :: binary()
 }).
 
--record(integer_reply, {
+-record(redis_integer, {
     value :: binary()
 }).
 
--record(bulk_reply, {
+-record(redis_bulk, {
     content :: none | binary()
 }).
 
--type simple_reply() :: #status_reply{} | #error_reply{} | #integer_reply{} | #bulk_reply{}.
+-type redis_simple() :: #redis_status{} | #redis_error{} | #redis_integer{} | #redis_bulk{}.
 
--record(multi_bulk_reply, {
+-record(redis_multi_bulk, {
     count :: binary(),
-    items :: [simple_reply()]
+    items :: [redis_simple()]
 }).
 
--type reply() :: simple_reply() | #multi_bulk_reply{}.
+-type reply() :: redis_simple() | #redis_multi_bulk{}.
 
 % transaction management records
 

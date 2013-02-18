@@ -159,22 +159,22 @@ verify_partial_and_complete_single_reply(Data, Result) ->
         end, {[], test_state([{42, ["foo"]}, {43, ["bar"]}])}, binary_to_list(Data)).
 
 receive_status_reply_test() ->
-    verify_partial_and_complete_single_reply(<<"+OK\r\n">>, #status_reply{message= <<"OK">>}).
+    verify_partial_and_complete_single_reply(<<"+OK\r\n">>, #redis_status{message= <<"OK">>}).
 
 receive_bulk_reply_test() ->
-    verify_partial_and_complete_single_reply(<<"$3\r\nbar\r\n">>, #bulk_reply{content= <<"bar">>}).
+    verify_partial_and_complete_single_reply(<<"$3\r\nbar\r\n">>, #redis_bulk{content= <<"bar">>}).
 
 receive_multi_bulk_reply_test() ->
-    verify_partial_and_complete_single_reply(<<"*3\r\n$3\r\nfoo\r\n$3\r\nbar\r\n$3\r\nbaz\r\n">>, #multi_bulk_reply{count=3, items=[
-        #bulk_reply{content= <<"foo">>},
-        #bulk_reply{content= <<"bar">>},
-        #bulk_reply{content= <<"baz">>}
+    verify_partial_and_complete_single_reply(<<"*3\r\n$3\r\nfoo\r\n$3\r\nbar\r\n$3\r\nbaz\r\n">>, #redis_multi_bulk{count=3, items=[
+        #redis_bulk{content= <<"foo">>},
+        #redis_bulk{content= <<"bar">>},
+        #redis_bulk{content= <<"baz">>}
     ]}).
 
 receive_multiple_replies_test() ->
-    Expected = {[{42, #status_reply{message= <<"OK">>}}, {43, #bulk_reply{content= <<"bar">>}}, {44, #multi_bulk_reply{count=2, items=[
-        #bulk_reply{content= <<"foo">>},
-        #bulk_reply{content= <<"bar">>}]}}
+    Expected = {[{42, #redis_status{message= <<"OK">>}}, {43, #redis_bulk{content= <<"bar">>}}, {44, #redis_multi_bulk{count=2, items=[
+        #redis_bulk{content= <<"foo">>},
+        #redis_bulk{content= <<"bar">>}]}}
     ], test_state([{45, ["fooey"]}])},
     Expected = recv(test_reply(<<"+OK\r\n", "$3\r\nbar\r\n", "*2\r\n$3\r\nfoo\r\n$3\r\nbar\r\n">>), test_state([{42, ["foo"]}, {43, ["bar"]}, {44, ["baz"]}, {45, ["fooey"]}])).
 
@@ -182,24 +182,24 @@ receive_complete_and_partial_them_remainder_reply_test() ->
     {partial, Partial} = redis_stream:parse(redis_stream:init(), <<"*2\r\n$3\r\nfoo">>),
     State = test_state([{43, ["bar"]}, {44, ["baz"]}]),
     State2 = State#redis_client_state{parse_state=Partial},
-    Expected = {[{42, #bulk_reply{content= <<"foo">>}}], State2},
+    Expected = {[{42, #redis_bulk{content= <<"foo">>}}], State2},
     Expected = recv(test_reply(<<"$3\r\nfoo\r\n*2\r\n$3\r\nfoo">>), test_state([{42, ["foo"]}, {43, ["bar"]}, {44, ["baz"]}])),
-    Expected2 = {[{43, #multi_bulk_reply{count=2, items=[
-        #bulk_reply{content= <<"foo">>},
-        #bulk_reply{content= <<"bar">>}
+    Expected2 = {[{43, #redis_multi_bulk{count=2, items=[
+        #redis_bulk{content= <<"foo">>},
+        #redis_bulk{content= <<"bar">>}
     ]}}], test_state([{44, ["baz"]}])},
     Expected2 = recv(test_reply(<<"\r\n$3\r\nbar\r\n">>), State2).
 
 verify_partial_and_complete_pipeline_test() ->
     Data = <<"+OK\r\n", "*3\r\n$3\r\nfoo\r\n$3\r\nbar\r\n$3\r\nbaz\r\n", "$3\r\nbar\r\n">>,
     Expected = {[{42, [
-        #status_reply{message= <<"OK">>},
-        #multi_bulk_reply{count=3, items=[
-            #bulk_reply{content= <<"foo">>},
-            #bulk_reply{content= <<"bar">>},
-            #bulk_reply{content= <<"baz">>}
+        #redis_status{message= <<"OK">>},
+        #redis_multi_bulk{count=3, items=[
+            #redis_bulk{content= <<"foo">>},
+            #redis_bulk{content= <<"bar">>},
+            #redis_bulk{content= <<"baz">>}
         ]},
-        #bulk_reply{content= <<"bar">>}
+        #redis_bulk{content= <<"bar">>}
     ]}], test_state([{43, ["bar"]}])},
     StartState = test_state([{42, [["set", "foo", "bar"], ["smembers", "foobar"], ["get", "foo"]]}, {43, ["bar"]}]),
     Expected = lists:foldl(fun(Byte, {[], State}) ->

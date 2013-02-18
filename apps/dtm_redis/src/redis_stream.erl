@@ -43,7 +43,7 @@
     count :: pos_integer(),
     seen :: non_neg_integer(),
     current :: none | #partial_status{} | #partial_error{} | #partial_integer{} | #partial_bulk{},
-    replies :: [simple_reply()]
+    replies :: [redis_simple()]
 }).
 
 -type parse_state() :: none | #partial_status{} | #partial_error{} | #partial_integer{} | #partial_bulk{} | #partial_multi_bulk{}.
@@ -69,18 +69,18 @@ create_multi_bulk(Items) ->
     [<<"*">>, make_binary(Count), <<"\r\n">> | lists:reverse(Multi)].
 
 -spec format_reply(reply()) -> iolist().
-format_reply(#status_reply{message=Message}) ->
+format_reply(#redis_status{message=Message}) ->
     <<"+", Message/binary, "\r\n">>;
-format_reply(#error_reply{type=Type, message=Message}) ->
+format_reply(#redis_error{type=Type, message=Message}) ->
     <<"-", Type/binary, " ", Message/binary, "\r\n">>;
-format_reply(#integer_reply{value=Value}) ->
+format_reply(#redis_integer{value=Value}) ->
     <<":", Value/binary, "\r\n">>;
-format_reply(#bulk_reply{content=none}) ->
+format_reply(#redis_bulk{content=none}) ->
     <<"$-1\r\n">>;
-format_reply(#bulk_reply{content=Content}) ->
+format_reply(#redis_bulk{content=Content}) ->
     Len = list_to_binary(integer_to_list(byte_size(Content))),
     <<"$", Len/binary, "\r\n", Content/binary, "\r\n">>;
-format_reply(#multi_bulk_reply{count=Count, items=Items}) ->
+format_reply(#redis_multi_bulk{count=Count, items=Items}) ->
     [<<"*">>, list_to_binary(integer_to_list(Count)), <<"\r\n">> | [format_reply(Item) || Item <- Items]].
 
 -spec init() -> none.
@@ -117,7 +117,7 @@ parse_type(<<$*, Remaining/binary>>) ->
 parse_status(#partial_status{previous=Previous}, Data) ->
     Combined = <<Previous/binary, Data/binary>>,
     case binary:split(Combined, <<"\r\n">>) of
-        [Message, Remaining] -> {#status_reply{message=Message}, Remaining, none};
+        [Message, Remaining] -> {#redis_status{message=Message}, Remaining, none};
         [Combined] -> {partial, #partial_status{previous=Combined}}
     end.
 
@@ -125,7 +125,7 @@ parse_status(#partial_status{previous=Previous}, Data) ->
 parse_integer(#partial_integer{previous=Previous}, Data) ->
     Combined = <<Previous/binary, Data/binary>>,
     case binary:split(Combined, <<"\r\n">>) of
-        [Integer, Remaining] -> {#integer_reply{value=Integer}, Remaining, none};
+        [Integer, Remaining] -> {#redis_integer{value=Integer}, Remaining, none};
         [Combined] -> {partial, #partial_integer{previous=Combined}}
     end.
 
@@ -136,7 +136,7 @@ parse_bulk(#partial_bulk{previous=Previous, len=none}=Partial, Data) ->
         [Integer, Remaining] ->
             IntVal = list_to_integer(binary_to_list(Integer)),
             case IntVal of
-                -1 -> {#bulk_reply{content=none}, Remaining, none};
+                -1 -> {#redis_bulk{content=none}, Remaining, none};
                 _Any -> parse_bulk(Partial#partial_bulk{previous=none, len=IntVal}, Remaining)
             end;
         [Combined] -> {partial, Partial#partial_bulk{previous=Combined}}
@@ -145,7 +145,7 @@ parse_bulk(#partial_bulk{len=Len, seen=Seen, buffers=Buffers}, Data) when (Seen 
     <<Content:Len/binary, _CrLf:2/binary, Remaining/binary>> = lists:foldl(fun(Buffer, Acc) ->
             <<Buffer/binary, Acc/binary>>
         end, <<>>, Buffers),
-    {#bulk_reply{content=Content}, <<Remaining/binary, Data/binary>>, none};
+    {#redis_bulk{content=Content}, <<Remaining/binary, Data/binary>>, none};
 parse_bulk(#partial_bulk{}=Partial, <<>>) ->
     {partial, Partial};
 parse_bulk(#partial_bulk{seen=Seen, buffers=Buffers}=Partial, Data) ->
@@ -159,7 +159,7 @@ parse_multi_bulk(#partial_multi_bulk{previous=Previous, count=none}=Partial, Dat
         [Combined] -> {partial, Partial#partial_multi_bulk{previous=Combined}}
     end;
 parse_multi_bulk(#partial_multi_bulk{count=Count, seen=Seen, replies=Replies}, Data) when (Count =:= Seen) ->
-    {#multi_bulk_reply{count=Count, items=lists:reverse(Replies)}, Data, none};
+    {#redis_multi_bulk{count=Count, items=lists:reverse(Replies)}, Data, none};
 parse_multi_bulk(Partial, <<>>) ->
     {partial, Partial};
 parse_multi_bulk(#partial_multi_bulk{current=none}=Partial, Data) ->
@@ -199,27 +199,27 @@ create_multi_bulk_test() ->
         end, <<>>, create_multi_bulk([<<"foo">>, <<"bar">>, <<"baz">>])).
 
 format_status_reply_test() ->
-    <<"+OK\r\n">> = format_reply(#status_reply{message= <<"OK">>}).
+    <<"+OK\r\n">> = format_reply(#redis_status{message= <<"OK">>}).
 
 format_error_reply_test() ->
-    <<"-ERR foo bar baz\r\n">> = format_reply(#error_reply{type= <<"ERR">>, message= <<"foo bar baz">>}).
+    <<"-ERR foo bar baz\r\n">> = format_reply(#redis_error{type= <<"ERR">>, message= <<"foo bar baz">>}).
 
 format_integer_reply_test() ->
-    <<":42\r\n">> = format_reply(#integer_reply{value= <<"42">>}).
+    <<":42\r\n">> = format_reply(#redis_integer{value= <<"42">>}).
 
 format_bulk_reply_test() ->
-    <<"$3\r\nfoo\r\n">> = format_reply(#bulk_reply{content= <<"foo">>}).
+    <<"$3\r\nfoo\r\n">> = format_reply(#redis_bulk{content= <<"foo">>}).
 
 format_empty_bulk_reply_test() ->
-    <<"$-1\r\n">> = format_reply(#bulk_reply{content=none}).
+    <<"$-1\r\n">> = format_reply(#redis_bulk{content=none}).
 
 format_multi_bulk_reply_test() ->
     <<"*3\r\n$3\r\nfoo\r\n+OK\r\n:42\r\n">> = lists:foldr(fun(Bin, Acc) ->
             <<Bin/binary, Acc/binary>>
-        end, <<>>, format_reply(#multi_bulk_reply{count=3, items=[
-            #bulk_reply{content= <<"foo">>},
-            #status_reply{message= <<"OK">>},
-            #integer_reply{value= <<"42">>}
+        end, <<>>, format_reply(#redis_multi_bulk{count=3, items=[
+            #redis_bulk{content= <<"foo">>},
+            #redis_status{message= <<"OK">>},
+            #redis_integer{value= <<"42">>}
     ]})).
 
 parse_initial_empty_test() ->
@@ -231,33 +231,33 @@ verify_partial_and_complete(Expected, Data) ->
         end, {partial, none}, Data).
 
 parse_status_test() ->
-    verify_partial_and_complete({#status_reply{message= <<"OK">>}, <<>>, none}, "+OK\r\n").
+    verify_partial_and_complete({#redis_status{message= <<"OK">>}, <<>>, none}, "+OK\r\n").
 
 parse_integer_test() ->
-    verify_partial_and_complete({#integer_reply{value= <<"42">>}, <<>>, none}, ":42\r\n").
+    verify_partial_and_complete({#redis_integer{value= <<"42">>}, <<>>, none}, ":42\r\n").
 
 parse_bulk_test() ->
-    verify_partial_and_complete({#bulk_reply{content= <<"foo">>}, <<>>, none}, "$3\r\nfoo\r\n").
+    verify_partial_and_complete({#redis_bulk{content= <<"foo">>}, <<>>, none}, "$3\r\nfoo\r\n").
 
 parse_empty_bulk_test() ->
-    verify_partial_and_complete({#bulk_reply{content=none}, <<>>, none}, "$-1\r\n").
+    verify_partial_and_complete({#redis_bulk{content=none}, <<>>, none}, "$-1\r\n").
 
 parse_multi_bulk_test() ->
-    verify_partial_and_complete({#multi_bulk_reply{count=3, items=[
-        #status_reply{message= <<"STORED">>},
-        #integer_reply{value= <<"42">>},
-        #bulk_reply{content= <<"foo">>}
+    verify_partial_and_complete({#redis_multi_bulk{count=3, items=[
+        #redis_status{message= <<"STORED">>},
+        #redis_integer{value= <<"42">>},
+        #redis_bulk{content= <<"foo">>}
     ]}, <<>>, none}, "*3\r\n+STORED\r\n:42\r\n$3\r\nfoo\r\n").
 
 parse_multiple_test() ->
-    Expected = #status_reply{message= <<"OK">>},
+    Expected = #redis_status{message= <<"OK">>},
     {Expected, Remaining, State} = parse(none, <<"+OK\r\n*2\r\n$3\r\nfoo\r\n$3\r\nbar\r\n:42\r\n">>),
-    Expected2 = #multi_bulk_reply{count=2, items=[
-        #bulk_reply{content= <<"foo">>},
-        #bulk_reply{content= <<"bar">>}
+    Expected2 = #redis_multi_bulk{count=2, items=[
+        #redis_bulk{content= <<"foo">>},
+        #redis_bulk{content= <<"bar">>}
     ]},
     {Expected2, Remaining2, State2} = parse(State, Remaining),
-    Expected3 = #integer_reply{value= <<"42">>},
+    Expected3 = #redis_integer{value= <<"42">>},
     {Expected3, <<>>, none} = parse(State2, Remaining2).
 
 -endif.

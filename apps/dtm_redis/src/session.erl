@@ -112,7 +112,7 @@ handle_watch(State, Key) ->
     {TransactionId, NewState} = get_txn_id(State),
     Bucket = hash:worker_for_key(Key, NewState#state.buckets),
     ok = gen_server:call(Bucket, #watch{txn_id=TransactionId, session_id=self(), key=Key}),
-    send_response(NewState#state{watches=add_watch(NewState#state.watches, Bucket)}, #status_reply{message= <<"OK">>}).
+    send_response(NewState#state{watches=add_watch(NewState#state.watches, Bucket)}, #redis_status{message= <<"OK">>}).
 
 add_watch(none, Bucket) ->
     sets:add_element(Bucket, sets:new());
@@ -121,7 +121,7 @@ add_watch(Watches, Bucket) ->
 
 handle_unwatch(State) ->
     send_unwatch(State),
-    send_response(State#state{watches=none}, #status_reply{message= <<"OK">>}).
+    send_response(State#state{watches=none}, #redis_status{message= <<"OK">>}).
 
 send_unwatch(#state{watches=none}) ->
     ok;
@@ -141,11 +141,11 @@ loop_unwatch(Watches, _) ->
 
 handle_multi(#state{transaction=none}=State) ->
     {_TransactionId, NewState} = get_txn_id(State),
-    send_response(NewState#state{transaction=#transaction{current=0, buckets=sets:new()}}, #status_reply{message= <<"OK">>});
+    send_response(NewState#state{transaction=#transaction{current=0, buckets=sets:new()}}, #redis_status{message= <<"OK">>});
 handle_multi(#state{}=State) ->
-    send_response(State, #error_reply{type= <<"ERR">>, message= <<"MULTI calls can not be nested">>}).
+    send_response(State, #redis_error{type= <<"ERR">>, message= <<"MULTI calls can not be nested">>}).
 
--spec send_response(#state{}, reply()) -> {reply, #status_reply{}, #state{}} | {noreply, #state{}}.
+-spec send_response(#state{}, reply()) -> {reply, reply(), #state{}} | {noreply, #state{}}.
 send_response(#state{client=shell}=State, Reply) ->
     {reply, Reply, State};
 send_response(#state{client=Client}=State, Reply) ->
@@ -153,7 +153,7 @@ send_response(#state{client=Client}=State, Reply) ->
     {noreply, State}.
 
 handle_exec(#state{transaction=none}=State) ->
-    send_response(State, #error_reply{type= <<"ERR">>, message= <<"EXEC without MULTI">>});
+    send_response(State, #redis_error{type= <<"ERR">>, message= <<"EXEC without MULTI">>});
 handle_exec(#state{txn_id=TransactionId, transaction=#transaction{buckets=Buckets}}=State) ->
     send_response(State#state{txn_id=none, transaction=none}, commit_transaction(TransactionId, Buckets)).
 
@@ -191,7 +191,7 @@ commit_transaction(TransactionId, Buckets) ->
     case loop_transaction_lock(Buckets, sets:size(Buckets), false) of
         error ->
             sets:fold(fun(Bucket, NotUsed) -> gen_server:cast(Bucket, #rollback_transaction{txn_id=TransactionId}), NotUsed end, not_used, Buckets),
-            #bulk_reply{content=none};
+            #redis_bulk{content=none};
         ok ->
             txn_monitor:persist(TransactionId, Buckets),
             sets:fold(fun(Bucket, NotUsed) -> gen_server:cast(Bucket, #commit_transaction{txn_id=TransactionId}), NotUsed end, not_used, Buckets),
