@@ -21,15 +21,26 @@
 -module(session).
 -behavior(gen_server).
 -export([start_link/3]).
--export([get/2, set/3, delete/2, watch/2, unwatch/1, multi/1, exec/1]).
+-export([call/2]).
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
 
 -include("protocol.hrl").
--include("operation.hrl").
 -include("dtm_redis.hrl").
 
--record(transaction, {current, buckets}).
--record(state, {client=none, txn_id=none, buckets, monitors, transaction=none, watches=none, stream}).
+-record(transaction, {
+    current,
+    buckets :: [bucket_id()]
+}).
+
+-record(state, {
+    client=none,
+    txn_id=none,
+    buckets,
+    monitors,
+    transaction=none,
+    watches=none,
+    stream
+}).
 
 % API methods
 
@@ -38,22 +49,9 @@ start_link(#buckets{}=Buckets, Monitors, shell) ->
 start_link(#buckets{}=Buckets, Monitors, Client) ->
     gen_server:start_link(?MODULE, #state{client=Client, buckets=Buckets, monitors=Monitors, stream=redis_protocol:init()}, []).
 
-get(Session, Key) ->
-    gen_server:call(Session, #get{key=Key}).
-set(Session, Key, Value) ->
-    gen_server:call(Session, #set{key=Key, value=Value}).
-delete(Session, Key) ->
-    gen_server:call(Session, #delete{key=Key}).
-
-watch(Session, Key) ->
-    gen_server:call(Session, {watch, Key}).
-unwatch(Session) ->
-    gen_server:call(Session, unwatch).
-
-multi(Session) ->
-    gen_server:call(Session, multi).
-exec(Session) ->
-    gen_server:call(Session, exec).
+-spec call(pid() | atom(), #operation{}) -> reply().
+call(Session, Operation) ->
+    gen_server:call(Session, Operation).
 
 % gen_server callbacks
 
@@ -61,20 +59,16 @@ init(#state{}=State) ->
     error_logger:info_msg("initializing session with pid ~p", [self()]),
     {ok, State}.
 
-handle_call({watch, Key}, _From, State) ->
+handle_call(#operation{command= <<"WATCH">>, key=Key}, _From, State) ->
     handle_watch(State, Key);
-handle_call(unwatch, _From, State) ->
+handle_call(#operation{command= <<"UNWATCH">>}, _From, State) ->
     handle_unwatch(State);
-handle_call(multi, _From, State) ->
+handle_call(#operation{command= <<"MULTI">>}, _From, State) ->
     handle_multi(State);
-handle_call(exec, _From, State) ->
+handle_call(#operation{command= <<"EXEC">>}, _From, State) ->
     handle_exec(State);
-handle_call(#get{}=Get, From, State) ->
-    handle_operation(State, From, Get);
-handle_call(#set{}=Set, From, State) ->
-    handle_operation(State, From, Set);
-handle_call(#delete{}=Delete, From, State) ->
-    handle_operation(State, From, Delete);
+handle_call(#operation{}=Operation, From, State) ->
+    handle_operation(State, From, Operation);
 handle_call(Message, From, _State) ->
     error_logger:error_msg("session:handle_call unhandled message ~p from ~p", [Message, From]),
     erlang:throw({error, unhandled}).
@@ -117,7 +111,7 @@ code_change(_OldVsn, State, _Extra) ->
 handle_watch(State, Key) ->
     {TransactionId, NewState} = get_txn_id(State),
     Bucket = hash:worker_for_key(Key, NewState#state.buckets),
-    ok = gen_server:call(Bucket, #watch{txn_id=TransactionId, session=self(), key=Key}),
+    ok = gen_server:call(Bucket, #watch{txn_id=TransactionId, session_id=self(), key=Key}),
     send_watch_response(NewState#state{watches=add_watch(NewState#state.watches, Bucket)}).
 
 add_watch(none, Bucket) ->
@@ -159,14 +153,15 @@ send_unwatch_response(#state{client=Client}=State) ->
 
 handle_multi(#state{transaction=none}=State) ->
     {_TransactionId, NewState} = get_txn_id(State),
-    send_multi_response(NewState#state{transaction=#transaction{current=0, buckets=sets:new()}}, ok);
+    send_response(NewState#state{transaction=#transaction{current=0, buckets=sets:new()}}, #status_reply{message= <<"OK">>});
 handle_multi(#state{}=State) ->
-    send_multi_response(State, error).
+    send_response(State, #error_reply{type= <<"ERR">>, message= <<"MULTI calls can not be nested">>}).
 
-send_multi_response(#state{client=shell}=State, Result) ->
-    {reply, Result, State};
-send_multi_response(#state{client=Client}=State, Result) ->
-    gen_tcp:send(Client, redis_protocol:format_response(Result)),
+-spec send_response(#state{}, reply()) -> {reply, #status_reply{}, #state{}} | {noreply, #state{}}.
+send_response(#state{client=shell}=State, Reply) ->
+    {reply, Reply, State};
+send_response(#state{client=Client}=State, Reply) ->
+    gen_tcp:send(Client, redis_stream:format_reply(Reply)),
     {noreply, State}.
 
 handle_exec(#state{transaction=none}=State) ->
@@ -194,47 +189,49 @@ close(#state{client=shell}) ->
 close(#state{client=Client}) ->
     gen_tcp:close(Client).
 
-handle_tcp_command(Client, State, {command, Name, Parameters}) ->
-    Lower = string:to_lower(binary_to_list(Name)),
-    case Lower of
-        "get" ->
-            [GetKey] = Parameters,
-            handle_operation(State, Client, #get{key=GetKey});
-        "set" ->
-            [SetKey, SetValue] = Parameters,
-            handle_operation(State, Client, #set{key=SetKey, value=SetValue});
-        "del" ->
-            [DeleteKey] = Parameters,
-            handle_operation(State, Client, #delete{key=DeleteKey});
-        "watch" ->
-            [WatchKey] = Parameters,
-            handle_watch(State, WatchKey);
-        "unwatch" ->
-            handle_unwatch(State);
-        "multi" ->
-            handle_multi(State);
-        "exec" ->
-            handle_exec(State);
-        Any ->
-            error_logger:info_msg("tcp command ~p not implemented~n", [Any])
-    end.
+handle_tcp_command(_Client, _State, {command, _Name, _Parameters}) ->
+    ok.
+
+%    Lower = string:to_lower(binary_to_list(Name)),
+%    case Lower of
+%        "get" ->
+%            [GetKey] = Parameters,
+%            handle_operation(State, Client, #get{key=GetKey});
+%        "set" ->
+%            [SetKey, SetValue] = Parameters,
+%            handle_operation(State, Client, #set{key=SetKey, value=SetValue});
+%        "del" ->
+%            [DeleteKey] = Parameters,
+%            handle_operation(State, Client, #delete{key=DeleteKey});
+%        "watch" ->
+%            [WatchKey] = Parameters,
+%            handle_watch(State, WatchKey);
+%        "unwatch" ->
+%            handle_unwatch(State);
+%        "multi" ->
+%            handle_multi(State);
+%        "exec" ->
+%            handle_exec(State);
+%        Any ->
+%            error_logger:info_msg("tcp command ~p not implemented~n", [Any])
+%    end.
 
 send_operation_response(_From, Response, #state{client=shell}=State) ->
-    {reply, Response, State};
-send_operation_response(Client, {ok, Response}, #state{client=Client}=State) ->
-    gen_tcp:send(Client, redis_protocol:format_response(Response)),
-    {noreply, State};
-send_operation_response(Client, Response, #state{client=Client}=State) ->
-    gen_tcp:send(Client, redis_protocol:format_response(Response)),
-    {noreply, State}.
+    {reply, Response, State}. %;
+%send_operation_response(Client, {ok, Response}, #state{client=Client}=State) ->
+%    gen_tcp:send(Client, redis_protocol:format_response(Response)),
+%    {noreply, State};
+%send_operation_response(Client, Response, #state{client=Client}=State) ->
+%    gen_tcp:send(Client, redis_protocol:format_response(Response)),
+%    {noreply, State}.
 
-handle_operation(#state{transaction=none}=State, From, Operation) ->
-    Bucket = hash:worker_for_key(operation:key(Operation), State#state.buckets),
-    Response = gen_server:call(Bucket, #command{session=self(), operation=Operation}),
+handle_operation(#state{transaction=none, buckets=Buckets}=State, From, #operation{key=Key}=Operation) ->
+    Bucket = hash:worker_for_key(Key, Buckets),
+    Response = gen_server:call(Bucket, #command{session_id=self(), operation=Operation}),
     send_operation_response(From, Response, State);
-handle_operation(#state{txn_id=TransactionId, transaction=Transaction}=State, From, Operation) ->
-    Bucket = hash:worker_for_key(operation:key(Operation), State#state.buckets),
-    Response = gen_server:call(Bucket, #transact{txn_id=TransactionId, session=self(), operation_id=Transaction#transaction.current, operation=Operation}),
+handle_operation(#state{txn_id=TransactionId, transaction=Transaction}=State, From, #operation{key=Key}=Operation) ->
+    Bucket = hash:worker_for_key(Key, State#state.buckets),
+    Response = gen_server:call(Bucket, #transact{txn_id=TransactionId, session_id=self(), operation_id=Transaction#transaction.current, operation=Operation}),
     Current = Transaction#transaction.current + 1,
     Buckets = sets:add_element(Bucket, Transaction#transaction.buckets),
     NewTransaction = Transaction#transaction{current=Current, buckets=Buckets},
@@ -249,7 +246,7 @@ commit_transaction(TransactionId, Buckets) ->
         ok ->
             txn_monitor:persist(TransactionId, Buckets),
             sets:fold(fun(Bucket, NotUsed) -> gen_server:cast(Bucket, #commit_transaction{txn_id=TransactionId}), NotUsed end, not_used, Buckets),
-            {ok, loop_transaction_commit(Buckets, [], sets:size(Buckets))}
+            loop_transaction_commit(Buckets, [], sets:size(Buckets))
     end.
 
 loop_transaction_lock(_Buckets, 0, false) ->
@@ -258,7 +255,7 @@ loop_transaction_lock(_Buckets, 0, true) ->
     error;
 loop_transaction_lock(Buckets, _Size, Failure) ->
     receive
-        #transaction_locked{bucket=Bucket, status=Status} ->
+        #transaction_locked{bucket_id=Bucket, status=Status} ->
             NewBuckets = sets:del_element(Bucket, Buckets),
             loop_transaction_lock(NewBuckets, sets:size(NewBuckets), Failure or (Status =:= error));
         Any ->

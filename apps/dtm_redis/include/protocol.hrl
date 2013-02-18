@@ -18,13 +18,92 @@
 %% OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 %% SOFTWARE.
 
--record(command, {session, operation}).
--record(transact, {txn_id, session, operation_id, operation}).
--record(watch, {txn_id, session, key}).
--record(unwatch, {txn_id, session}).
+% types
 
--record(lock_transaction, {txn_id, session}).
--record(transaction_locked, {bucket, status}).
--record(commit_transaction, {txn_id, session}).
--record(rollback_transaction, {txn_id, session}).
+-type session_id() :: pid().
+-type transaction_id() :: binary().
+-type operation_id() :: non_neg_integer().
+-type key() :: binary().
+-type bucket_id() :: pid().
+
+% request records
+
+-record(operation, {
+    command :: binary(),
+    key :: key() | none,
+    arguments :: [binary()]
+}).
+
+-record(transact, {
+    txn_id :: transaction_id(),
+    session_id :: session_id(),
+    operation_id :: operation_id(),
+    operation :: #operation{}
+}).
+
+-record(watch, {
+    txn_id :: transaction_id(),
+    session_id :: session_id(),
+    key :: key()
+}).
+
+-record(unwatch, {
+    txn_id :: transaction_id(),
+    session :: session_id()
+}).
+
+-record(command, {
+    session_id :: session_id(),
+    operation :: #operation{}
+}).
+
+% reply records
+
+-record(status_reply, {
+    message :: binary()
+}).
+
+-record(error_reply, {
+    type :: binary(),
+    message :: binary()
+}).
+
+-record(integer_reply, {
+    value :: binary()
+}).
+
+-record(bulk_reply, {
+    content :: none | binary()
+}).
+
+-type simple_reply() :: #status_reply{} | #error_reply{} | #integer_reply{} | #bulk_reply{}.
+
+-record(multi_bulk_reply, {
+    count :: binary(),
+    items :: [simple_reply()]
+}).
+
+-type reply() :: simple_reply() | #multi_bulk_reply{}.
+
+% transaction management records
+
+-record(lock_transaction, {
+    txn_id :: transaction_id(),
+    session_id :: session_id()
+}).
+
+-record(transaction_locked, {
+    bucket_id :: bucket_id(),
+    status :: ok | error
+}).
+
+-record(commit_transaction, {
+    txn_id :: transaction_id(),
+    session_id :: session_id()
+}).
+
+-record(rollback_transaction, {
+    txn_id :: transaction_id(),
+    session_id :: session_id()
+}).
 

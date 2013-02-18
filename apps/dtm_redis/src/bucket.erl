@@ -25,7 +25,6 @@
 
 -include("dtm_redis.hrl").
 -include("protocol.hrl").
--include("operation.hrl").
 -include("data_types.hrl").
 -include("store.hrl").
 
@@ -49,7 +48,7 @@ init([Name, Binlog, #bucket{store_host=Host, store_port=Port}]) ->
 handle_call(#command{}=Command, From, State) ->
     {noreply, handle_command(Command, From, State)};
 handle_call(#transact{}=Transact, From, State) ->
-    {reply, stored, handle_transact(Transact, From, State)};
+    {reply, #status_reply{message= <<"STORED">>}, handle_transact(Transact, From, State)};
 handle_call(#watch{}=Watch, From, State) ->
     {reply, ok, handle_watch(Watch, From, State)};
 handle_call(Message, From, _State) ->
@@ -70,7 +69,7 @@ handle_cast(Message, _State) ->
 
 handle_info({binlog_data_written, {lock_txn, Id}}, State) ->
     {ok, Transaction} = dict:find(Id, State#state.transactions),
-    Transaction#transaction.session ! #transaction_locked{bucket=bucket_id(State), status=Transaction#transaction.locked},
+    Transaction#transaction.session ! #transaction_locked{bucket_id=bucket_id(State), status=Transaction#transaction.locked},
     {noreply, State};
 handle_info({binlog_data_written, {delete, _Id}}, State) ->
     {noreply, State};
@@ -94,17 +93,26 @@ bucket_id(#state{name=none}) ->
 bucket_id(#state{name=Name}) ->
     Name.
 
-handle_command(#command{session=Session, operation=Operation}, From, #state{transactions=Transactions, store=Store}=State) ->
-    Current = get(operation:key(Operation)),
+handle_command(#command{session_id=Session, operation=#operation{key=Key}=Operation}, From, #state{transactions=Transactions, store=Store}=State) ->
+    Current = get(Key),
     case key_meta:is_locked(Current, Session) of
         true ->
             #key{locked=Locked} = Current,
             #transaction{deferred=Deferred}=Transaction = dict:fetch(Locked, Transactions),
-            NewTransaction = Transaction#transaction{deferred=[{From, Operation}|Deferred]},
+            NewTransaction = Transaction#transaction{deferred=[{From, Operation} | Deferred]},
             State#state{transactions=dict:store(Locked, NewTransaction, Transactions)};
         false ->
             State#state{store=handle_operation(Store, From, Operation, Current)}
     end.
+
+record_mutation(Command, Key, Current) when is_binary(Command) ->
+    record_mutation(string:to_lower(binary_to_list(Command)), Key, Current);
+record_mutation("set", Key, Current) ->
+    update_meta(Key, Current);
+record_mutation("del", Key, Current) ->
+    delete_meta(Key, Current);
+record_mutation(_Command, _Key, _Current) ->
+    ok.
 
 update_meta(Key, Current) ->
     put(Key, key_meta:update(Current)).
@@ -115,22 +123,14 @@ delete_meta(Key, Current) ->
         false -> erase(Key)
     end.
 
-handle_batch_operation(Store, #get{key=Key}) ->
-    redis_store:get(Store, Key);
-handle_batch_operation(Store, #set{key=Key, value=Value}) ->
-    update_meta(Key, get(Key)),
-    redis_store:set(Store, Key, Value);
-handle_batch_operation(Store, #delete{key=Key}) ->
-    redis_store:delete(Store, Key).
+handle_batch_operation(Store, #operation{command=Command, key=Key}=Operation) ->
+    record_mutation(Command, Key, get(Key)),
+    redis_store:handle_operation(Store, Operation).
 
-handle_operation(Store, From, #get{key=Key}, _Current) ->
-    redis_store:get(#single_operation{session=From}, Store, Key);
-handle_operation(Store, From, #set{key=Key, value=Value}, Current) ->
-    update_meta(Key, Current),
-    redis_store:set(#single_operation{session=From}, Store, Key, Value);
-handle_operation(Store, From, #delete{key=Key}, Current) ->
-    delete_meta(Key, Current),
-    redis_store:delete(#single_operation{session=From}, Store, Key).
+handle_operation(Store, From, #operation{command=Command, key=Key}=Operation, Current) ->
+    record_mutation(Command, Key, Current),
+    Id = #single_operation{session=From},
+    redis_store:handle_operation(Id, Store, Operation).
 
 add_operation(error, Session, Operation) ->
     add_operation({ok, #transaction{session=Session}}, Session, Operation);
@@ -138,11 +138,11 @@ add_operation({ok, #transaction{}=Transaction}, Session, Operation) ->
     Session = Transaction#transaction.session,
     Transaction#transaction{operations=[Operation|Transaction#transaction.operations]}.
 
-handle_transact(#transact{txn_id=TransactionId, session=Session, operation_id=Id, operation=Operation}, _From, #state{transactions=Transactions}=State) ->
+handle_transact(#transact{txn_id=TransactionId, session_id=Session, operation_id=Id, operation=Operation}, _From, #state{transactions=Transactions}=State) ->
     NewTransaction = add_operation(dict:find(TransactionId, Transactions), Session, {Id, Operation}),
     State#state{transactions=dict:store(TransactionId, NewTransaction, Transactions)}.
 
-handle_watch(#watch{txn_id=TransactionId, session=Session, key=Key}, _From, #state{transactions=Transactions}=State) ->
+handle_watch(#watch{txn_id=TransactionId, session_id=Session, key=Key}, _From, #state{transactions=Transactions}=State) ->
     NewTransaction = add_watch(dict:find(TransactionId, Transactions), Session, Key),
     State#state{transactions=dict:store(TransactionId, NewTransaction, Transactions)}.
 
@@ -184,7 +184,7 @@ handle_lock_transaction(#lock_transaction{txn_id=TransactionId}, #state{binlog=B
             binlog:write(Binlog, {lock_txn, TransactionId}, Transaction),
             {Transaction#transaction{locked=true}, Store};
         error ->
-            Transaction#transaction.session ! #transaction_locked{bucket=bucket_id(State), status=LockStatus},
+            Transaction#transaction.session ! #transaction_locked{bucket_id=bucket_id(State), status=LockStatus},
             unlock_transaction(Store, Transaction#transaction{locked=false})
     end,
     State#state{transactions=dict:store(TransactionId, NewTransaction, State#state.transactions), store=NewStore}.
@@ -201,8 +201,7 @@ lock_keys(error, _, _) ->
     error;
 lock_keys(ok, [], _TransactionId) ->
     ok;
-lock_keys(ok, [{_Id, Operation}|Remainder], TransactionId) ->
-    Key = operation:key(Operation),
+lock_keys(ok, [{_Id, #operation{key=Key}} | Remainder], TransactionId) ->
     Current = get(Key),
     case key_meta:is_locked(Current, TransactionId) of
         true -> error;
@@ -234,8 +233,8 @@ apply_transaction(Store, #transaction{operations=Operations}=Transaction, Transa
     NewNewStore.
 
 unlock_transaction(Store, #transaction{deferred=Deferred, locked=false}=Transaction) ->
-    NewStore = lists:foldl(fun({Session, Operation}, S) ->
-            handle_operation(S, Session, Operation, get(operation:key(Operation)))
+    NewStore = lists:foldl(fun({Session, #operation{key=Key}=Operation}, S) ->
+            handle_operation(S, Session, Operation, get(Key))
         end, Store, lists:reverse(Deferred)),
     {Transaction#transaction{deferred=[]}, NewStore};
 unlock_transaction(Store, #transaction{operations=Operations}=Transaction) ->
@@ -244,31 +243,19 @@ unlock_transaction(Store, #transaction{operations=Operations}=Transaction) ->
 
 unlock_keys([]) ->
     ok;
-unlock_keys([{_Id, Operation}|Remainder]) ->
-    Key = operation:key(Operation),
+unlock_keys([{_Id, #operation{key=Key}} | Remainder]) ->
     put(Key, key_meta:unlock(get(Key))),
     unlock_keys(Remainder).
-
-map_result(ok) ->
-    ok;
-map_result(undefined) ->
-    undefined;
-map_result(error) ->
-    error;
-map_result(Result) when is_integer(Result) ->
-    Result;
-map_result(Result) ->
-    {ok, Result}.
 
 map_transaction_results(_Results, _Operations, error) ->
     error;
 map_transaction_results([], [], Results) ->
     Results;
-map_transaction_results([Result|ResultsTail], [{Order, _Operation}|OperationsTail], Results) ->
-    map_transaction_results(ResultsTail, OperationsTail, [{Order, Result}|Results]).
+map_transaction_results([Result | ResultsTail], [{Order, _Operation} | OperationsTail], Results) ->
+    map_transaction_results(ResultsTail, OperationsTail, [{Order, Result} | Results]).
 
 handle_store_result(#single_operation{session=From}, Result, State) ->
-    gen_server:reply(From, map_result(Result)),
+    gen_server:reply(From, Result),
     State;
 handle_store_result(#transaction_operation{txn_id=TransactionId}, Results, #state{binlog=Binlog, transactions=Transactions}=State) ->
     {ok, Transaction} = dict:find(TransactionId, Transactions),

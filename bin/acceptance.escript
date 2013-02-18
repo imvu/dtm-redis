@@ -32,7 +32,7 @@ main([Param]) when is_list(Param) ->
         test_watch(),
         test_unwatch()
     ],
-    lists:foreach(fun(Test) -> rpc:call(Node, erlang, apply, [Test, []]) end, Tests),
+    lists:foreach(fun(Test) -> ok = rpc:call(Node, erlang, apply, [Test, []]) end, Tests),
     io:format("All tests passed~n", []);
 main(Any) ->
     io:format("Invalid program arugments ~p~n", [Any]),
@@ -56,7 +56,7 @@ test_get_set() ->
     fun() ->
         io:format("### beginning test_get_set~n", []),
         ok = dtm_redis:set(foo, bar),
-        {ok, <<"bar">>} = dtm_redis:get(foo),
+        "bar" = dtm_redis:get(foo),
         io:format("test_get_set passed ###~n", [])
     end.
 
@@ -65,7 +65,7 @@ test_delete() ->
         io:format("### beginning test_delete~n", []),
         ok = dtm_redis:set(foo, bar),
         1 = dtm_redis:delete(foo),
-        undefined = dtm_redis:get(foo),
+        nil = dtm_redis:get(foo),
         io:format("test_delete passed ###~n", [])
     end.
 
@@ -76,8 +76,8 @@ test_transaction() ->
         ok = dtm_redis:multi(),
         stored = dtm_redis:get(foo),
         stored = dtm_redis:set(foo, bar),
-        {ok, [<<"baz">>, ok]} = dtm_redis:exec(),
-        {ok, <<"bar">>} = dtm_redis:get(foo),
+        ["baz", ok] = dtm_redis:exec(),
+        "bar" = dtm_redis:get(foo),
         io:format("test_transaction passed ###~n", [])
     end.
 
