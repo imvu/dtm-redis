@@ -100,7 +100,7 @@ recv({tcp_closed, Socket}, #redis_client_state{socket=Socket}) ->
 
 -spec init(none | gen_tcp:socket() | test_socket) -> redis_state().
 init(Socket) ->
-    #redis_client_state{socket=Socket, parse_state=redis_stream:init(), pending=[]}.
+    #redis_client_state{socket=Socket, parse_state=redis_stream:init_reply_stream(), pending=[]}.
 
 -spec push_request(command_id(), redis_state()) -> redis_state().
 push_request(Id, #redis_client_state{pending=Pending}=State) ->
@@ -114,7 +114,7 @@ push_request(Id, Count, #redis_client_state{pending=Pending}=State) ->
 parse_reply(Replies, <<>>, State) ->
     {lists:reverse(Replies), State};
 parse_reply(Results, Data, #redis_client_state{parse_state=ParseState}=State) ->
-    case redis_stream:parse(ParseState, Data) of
+    case redis_stream:parse_reply(ParseState, Data) of
         {partial, NewParseState} -> {Results, State#redis_client_state{parse_state=NewParseState}};
         {Reply, Remaining, NewParseState} -> handle_reply(Results, Reply, NewParseState, Remaining, State)
     end.
@@ -179,7 +179,7 @@ receive_multiple_replies_test() ->
     Expected = recv(test_reply(<<"+OK\r\n", "$3\r\nbar\r\n", "*2\r\n$3\r\nfoo\r\n$3\r\nbar\r\n">>), test_state([{42, ["foo"]}, {43, ["bar"]}, {44, ["baz"]}, {45, ["fooey"]}])).
 
 receive_complete_and_partial_them_remainder_reply_test() ->
-    {partial, Partial} = redis_stream:parse(redis_stream:init(), <<"*2\r\n$3\r\nfoo">>),
+    {partial, Partial} = redis_stream:parse_reply(redis_stream:init_reply_stream(), <<"*2\r\n$3\r\nfoo">>),
     State = test_state([{43, ["bar"]}, {44, ["baz"]}]),
     State2 = State#redis_client_state{parse_state=Partial},
     Expected = {[{42, #redis_bulk{content= <<"foo">>}}], State2},

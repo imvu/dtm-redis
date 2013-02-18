@@ -20,7 +20,9 @@
 
 -module(redis_stream).
 
--export([make_binary/1, create_multi_bulk/1, format_reply/1, init/0, parse/2]).
+-export([make_binary/1, create_multi_bulk/1, format_reply/1]).
+-export([init_request_stream/0, parse_request/2]).
+-export([init_reply_stream/0, parse_reply/2]).
 
 -include("protocol.hrl").
 
@@ -83,6 +85,28 @@ format_reply(#redis_bulk{content=Content}) ->
 format_reply(#redis_multi_bulk{count=Count, items=Items}) ->
     [<<"*">>, list_to_binary(integer_to_list(Count)), <<"\r\n">> | [format_reply(Item) || Item <- Items]].
 
+-spec init_request_stream() -> parse_state().
+init_request_stream() ->
+    init().
+
+-spec parse_request(none | #partial_multi_bulk{}, binary()) -> parse_result().
+parse_request(State, <<>>) ->
+    {partial, State};
+parse_request(none, <<$*, Remaining/binary>>) ->
+    parse_request(#partial_multi_bulk{previous= <<>>, count=none, seen=0, current=none, replies=[]}, Remaining);
+parse_request(#partial_multi_bulk{}=State, Data) ->
+    parse(State, Data).
+
+-spec init_reply_stream() -> parse_state().
+init_reply_stream() ->
+    init().
+
+-spec parse_reply(parse_state(), binary()) -> parse_result().
+parse_reply(State, Data) ->
+    parse(State, Data).
+
+% private methods
+
 -spec init() -> none.
 init() ->
     none.
@@ -100,8 +124,6 @@ parse(#partial_bulk{}=Partial, Data) ->
     parse_bulk(Partial, Data);
 parse(#partial_multi_bulk{}=Partial, Data) ->
     parse_multi_bulk(Partial, Data).
-
-% private methods
 
 -spec parse_type(binary()) -> parse_result().
 parse_type(<<$+, Remaining/binary>>) ->
@@ -259,6 +281,15 @@ parse_multiple_test() ->
     {Expected2, Remaining2, State2} = parse(State, Remaining),
     Expected3 = #redis_integer{value= <<"42">>},
     {Expected3, <<>>, none} = parse(State2, Remaining2).
+
+parse_request_test() ->
+    {#redis_multi_bulk{count=2, items=[
+        #redis_bulk{content= <<"WATCH">>},
+        #redis_bulk{content= <<"foo">>}
+    ]}, <<>>, none} = parse_request(init(), <<"*2\r\n$5\r\nWATCH\r\n$3\r\nfoo\r\n">>).
+
+parse_reply_test() ->
+    {#redis_status{message= <<"OK">>}, <<>>, none} = parse_reply(init(), <<"+OK\r\n">>).
 
 -endif.
 
