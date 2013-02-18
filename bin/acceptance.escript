@@ -74,8 +74,8 @@ test_transaction() ->
         io:format("### beginning test_transaction~n", []),
         ok = dtm_redis:set(foo, baz),
         ok = dtm_redis:multi(),
-        stored = dtm_redis:get(foo),
-        stored = dtm_redis:set(foo, bar),
+        queued = dtm_redis:get(foo),
+        queued = dtm_redis:set(foo, bar),
         ["baz", ok] = dtm_redis:exec(),
         "bar" = dtm_redis:get(foo),
         io:format("test_transaction passed ###~n", [])
@@ -87,7 +87,7 @@ test_watch() ->
         ok = dtm_redis:watch(foo),
         ok = dtm_redis:set(foo, baz),
         ok = dtm_redis:multi(),
-        stored = dtm_redis:set(foo, bar),
+        queued = dtm_redis:set(foo, bar),
         nil = dtm_redis:exec(),
         "baz" = dtm_redis:get(foo),
         io:format("test_watch passed ###~n", [])
@@ -100,7 +100,7 @@ test_unwatch() ->
         ok = dtm_redis:set(foo, baz),
         ok = dtm_redis:unwatch(),
         ok = dtm_redis:multi(),
-        stored = dtm_redis:set(foo, bar),
+        queued = dtm_redis:set(foo, bar),
         [ok] = dtm_redis:exec(),
         "bar" = dtm_redis:get(foo),
         io:format("test_unwatch passed ###~n", [])

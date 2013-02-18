@@ -88,7 +88,7 @@ show_reply(Replies) when is_list(Replies) ->
 
 -spec status_to_atom(binary()) -> atom().
 status_to_atom(<<"OK">>) -> ok;
-status_to_atom(<<"STORED">>) -> stored.
+status_to_atom(<<"QUEUED">>) -> queued.
 
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
@@ -104,7 +104,7 @@ make_command_with_key_and_arguments_test() ->
 
 show_status_reply_test() ->
     ok = show_reply(#redis_status{message= <<"OK">>}),
-    stored = show_reply(#redis_status{message= <<"STORED">>}).
+    queued = show_reply(#redis_status{message= <<"QUEUED">>}).
 
 show_error_reply_test() ->
     "error ERR foo bar baz" = show_reply(#redis_error{type= <<"ERR">>, message= <<"foo bar baz">>}).

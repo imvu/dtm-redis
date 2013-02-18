@@ -47,7 +47,7 @@
 start_link(#buckets{}=Buckets, Monitors, shell) ->
     gen_server:start_link({local, shell}, ?MODULE, #state{client=shell, buckets=Buckets, monitors=Monitors}, []);
 start_link(#buckets{}=Buckets, Monitors, Client) ->
-    gen_server:start_link(?MODULE, #state{client=Client, buckets=Buckets, monitors=Monitors, stream=redis_protocol:init()}, []).
+    gen_server:start_link(?MODULE, #state{client=Client, buckets=Buckets, monitors=Monitors, stream=redis_stream:init_request_stream()}, []).
 
 -spec call(pid() | atom(), #operation{}) -> reply().
 call(Session, Operation) ->
@@ -59,16 +59,8 @@ init(#state{}=State) ->
     error_logger:info_msg("initializing session with pid ~p", [self()]),
     {ok, State}.
 
-handle_call(#operation{command= <<"WATCH">>, key=Key}, _From, State) ->
-    handle_watch(State, Key);
-handle_call(#operation{command= <<"UNWATCH">>}, _From, State) ->
-    handle_unwatch(State);
-handle_call(#operation{command= <<"MULTI">>}, _From, State) ->
-    handle_multi(State);
-handle_call(#operation{command= <<"EXEC">>}, _From, State) ->
-    handle_exec(State);
-handle_call(#operation{}=Operation, From, State) ->
-    handle_operation(State, From, Operation);
+handle_call(#operation{}=Operation, _From, State) ->
+    handle_operation(State, Operation);
 handle_call(Message, From, _State) ->
     error_logger:error_msg("session:handle_call unhandled message ~p from ~p", [Message, From]),
     erlang:throw({error, unhandled}).
@@ -79,16 +71,7 @@ handle_cast(Message, _State) ->
 
 handle_info({tcp, Client, Data}, #state{client=Client}=State) ->
     inet:setopts(Client, [{active, once}]),
-    {NewStream, Result} = redis_protocol:parse_stream(State#state.stream, Data),
-    NewState = State#state{stream=NewStream},
-    if
-        is_record(Result, command) ->
-            handle_tcp_command(Client, NewState, Result);
-        Result == protocol_error ->
-            error_logger:info_msg("unexpected data received from client connection, aborting~n", []);
-        Result == incomplete ->
-            {noreply, NewState}
-    end;
+    parse_request(State, Data);
 handle_info({tcp_closed, Client}, #state{client=Client}=State) ->
     {stop, normal, State};
 handle_info({tcp_error, Reason, Client}, #state{client=Client}=State) ->
@@ -107,6 +90,40 @@ code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
 % internal methods
+
+-spec parse_request(#state{}, binary()) -> {noreply, #state{}}.
+parse_request(State, <<>>) ->
+    {noreply, State};
+parse_request(#state{stream=Parser}=State, Data) ->
+    case redis_stream:parse_request(Parser, Data) of
+        {partial, NewParser} ->
+            {noreply, State#state{stream=NewParser}};
+        {Request, Remaining, NewParser} ->
+            {noreply, NewState} = handle_operation(State#state{stream=NewParser}, redis_command:parse_operation(Request)),
+            parse_request(NewState, Remaining)
+    end.
+
+-spec handle_operation(#state{}, #operation{} | #redis_error{}) -> {reply, reply(), #state{}} | {noreply, #state{}}.
+handle_operation(State, #operation{command= <<"WATCH">>, key=Key}) ->
+    handle_watch(State, Key);
+handle_operation(State, #operation{command= <<"UNWATCH">>}) ->
+    handle_unwatch(State);
+handle_operation(State, #operation{command= <<"MULTI">>}) ->
+    handle_multi(State);
+handle_operation(State, #operation{command= <<"EXEC">>}) ->
+    handle_exec(State);
+handle_operation(#state{transaction=none, buckets=Buckets}=State, #operation{key=Key}=Operation) ->
+    Bucket = hash:worker_for_key(Key, Buckets),
+    Response = gen_server:call(Bucket, #command{session_id=self(), operation=Operation}),
+    send_response(State, Response);
+handle_operation(#state{txn_id=TransactionId, transaction=#transaction{current=CurrentOp}=Transaction}=State, #operation{key=Key}=Operation) ->
+    Bucket = hash:worker_for_key(Key, State#state.buckets),
+    Response = gen_server:call(Bucket, #transact{txn_id=TransactionId, session_id=self(), operation_id=CurrentOp, operation=Operation}),
+    Buckets = sets:add_element(Bucket, Transaction#transaction.buckets),
+    NewTransaction = Transaction#transaction{current=CurrentOp + 1, buckets=Buckets},
+    send_response(State#state{transaction=NewTransaction}, Response);
+handle_operation(State, #redis_error{}=Error) ->
+    send_response(State, Error).
 
 handle_watch(State, Key) ->
     {TransactionId, NewState} = get_txn_id(State),
@@ -168,24 +185,6 @@ close(#state{client=shell}) ->
 close(#state{client=Client}) ->
     gen_tcp:close(Client).
 
-handle_tcp_command(_Client, _State, {command, _Name, _Parameters}) ->
-    ok.
-
-send_operation_response(_From, Response, #state{client=shell}=State) ->
-    {reply, Response, State}.
-
-handle_operation(#state{transaction=none, buckets=Buckets}=State, From, #operation{key=Key}=Operation) ->
-    Bucket = hash:worker_for_key(Key, Buckets),
-    Response = gen_server:call(Bucket, #command{session_id=self(), operation=Operation}),
-    send_operation_response(From, Response, State);
-handle_operation(#state{txn_id=TransactionId, transaction=Transaction}=State, From, #operation{key=Key}=Operation) ->
-    Bucket = hash:worker_for_key(Key, State#state.buckets),
-    Response = gen_server:call(Bucket, #transact{txn_id=TransactionId, session_id=self(), operation_id=Transaction#transaction.current, operation=Operation}),
-    Current = Transaction#transaction.current + 1,
-    Buckets = sets:add_element(Bucket, Transaction#transaction.buckets),
-    NewTransaction = Transaction#transaction{current=Current, buckets=Buckets},
-    send_operation_response(From, Response, State#state{transaction=NewTransaction}).
-
 commit_transaction(TransactionId, Buckets) ->
     sets:fold(fun(Bucket, NotUsed) -> gen_server:cast(Bucket, #lock_transaction{txn_id=TransactionId}), NotUsed end, not_used, Buckets),
     case loop_transaction_lock(Buckets, sets:size(Buckets), false) of
@@ -212,12 +211,13 @@ loop_transaction_lock(Buckets, _Size, Failure) ->
     end.
 
 loop_transaction_commit(_Buckets, Results, 0) ->
-    [Result || {_, Result} <- lists:sort(fun({Lhs, _}, {Rhs, _}) -> Lhs =< Rhs end, lists:flatten(Results))];
+    FlatResults = lists:flatten(Results),
+    #redis_multi_bulk{count=length(FlatResults), items=[Result || {_, Result} <- lists:sort(fun({Lhs, _}, {Rhs, _}) -> Lhs =< Rhs end, FlatResults)]};
 loop_transaction_commit(Buckets, ResultsSoFar, _) ->
     receive
         {Bucket, Results} ->
             NewBuckets = sets:del_element(Bucket, Buckets),
-            NewResultsSoFar = [Results|ResultsSoFar],
+            NewResultsSoFar = [Results | ResultsSoFar],
             loop_transaction_commit(NewBuckets, NewResultsSoFar, sets:size(NewBuckets));
         Any ->
             error_logger:info_msg("session got an unexpected message ~p~n", [Any])

@@ -24,8 +24,7 @@
     {registered, []},
     {applications, [
         kernel,
-        stdlib,
-        eredis
+        stdlib
     ]},
     {mod, {dtm_redis_app, []}},
     {env, []}

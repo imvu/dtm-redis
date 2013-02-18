@@ -48,7 +48,7 @@ init([Name, Binlog, #bucket{store_host=Host, store_port=Port}]) ->
 handle_call(#command{}=Command, From, State) ->
     {noreply, handle_command(Command, From, State)};
 handle_call(#transact{}=Transact, From, State) ->
-    {reply, #redis_status{message= <<"STORED">>}, handle_transact(Transact, From, State)};
+    {reply, #redis_status{message= <<"QUEUED">>}, handle_transact(Transact, From, State)};
 handle_call(#watch{}=Watch, From, State) ->
     {reply, ok, handle_watch(Watch, From, State)};
 handle_call(Message, From, _State) ->

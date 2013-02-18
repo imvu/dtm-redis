@@ -70,7 +70,7 @@ create_multi_bulk(Items) ->
         end, {[], 0}, Items),
     [<<"*">>, make_binary(Count), <<"\r\n">> | lists:reverse(Multi)].
 
--spec format_reply(reply()) -> iolist().
+-spec format_reply(reply() | [reply()]) -> iolist().
 format_reply(#redis_status{message=Message}) ->
     <<"+", Message/binary, "\r\n">>;
 format_reply(#redis_error{type=Type, message=Message}) ->
@@ -266,10 +266,10 @@ parse_empty_bulk_test() ->
 
 parse_multi_bulk_test() ->
     verify_partial_and_complete({#redis_multi_bulk{count=3, items=[
-        #redis_status{message= <<"STORED">>},
+        #redis_status{message= <<"QUEUED">>},
         #redis_integer{value= <<"42">>},
         #redis_bulk{content= <<"foo">>}
-    ]}, <<>>, none}, "*3\r\n+STORED\r\n:42\r\n$3\r\nfoo\r\n").
+    ]}, <<>>, none}, "*3\r\n+QUEUED\r\n:42\r\n$3\r\nfoo\r\n").
 
 parse_multiple_test() ->
     Expected = #redis_status{message= <<"OK">>},
