@@ -88,8 +88,8 @@ test_watch() ->
         ok = dtm_redis:set(foo, baz),
         ok = dtm_redis:multi(),
         stored = dtm_redis:set(foo, bar),
-        undefined = dtm_redis:exec(),
-        {ok, <<"baz">>} = dtm_redis:get(foo),
+        nil = dtm_redis:exec(),
+        "baz" = dtm_redis:get(foo),
         io:format("test_watch passed ###~n", [])
     end.
 
@@ -101,8 +101,8 @@ test_unwatch() ->
         ok = dtm_redis:unwatch(),
         ok = dtm_redis:multi(),
         stored = dtm_redis:set(foo, bar),
-        {ok, [ok]} = dtm_redis:exec(),
-        {ok, <<"bar">>} = dtm_redis:get(foo),
+        [ok] = dtm_redis:exec(),
+        "bar" = dtm_redis:get(foo),
         io:format("test_unwatch passed ###~n", [])
     end.
 

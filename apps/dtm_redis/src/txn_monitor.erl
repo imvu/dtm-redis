@@ -32,6 +32,9 @@
 -record(state, {next_id=1, binlog, transactions}).
 -record(transaction, {session, buckets}).
 
+-opaque transaction_id() :: #txn_id{}.
+-export_type([transaction_id/0]).
+
 % API methods
 
 start_link(Monitor, Binlog) ->
