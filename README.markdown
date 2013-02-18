@@ -47,24 +47,79 @@ The following command will start dtm-redis and start the erlang interpreter:
 
 <pre>
 $ make debug
-Erlang R14B02 (erts-5.8.3) [source] [64-bit] [smp:2:2] [rq:2] [async-threads:0] [kernel-poll:false]
+bin/rebar compile
+==> Entering directory `/home/eric/git/dtm-redis/lib'
+==> lib (compile)
+==> Leaving directory `/home/eric/git/dtm-redis/lib'
+==> Entering directory `/home/eric/git/dtm-redis/apps'
+==> Entering directory `/home/eric/git/dtm-redis/apps/dtm_redis'
+==> dtm_redis (compile)
+==> Leaving directory `/home/eric/git/dtm-redis/apps/dtm_redis'
+==> apps (compile)
+==> Leaving directory `/home/eric/git/dtm-redis/apps'
+==> Entering directory `/home/eric/git/dtm-redis/rel'
+==> rel (compile)
+==> Leaving directory `/home/eric/git/dtm-redis/rel'
+==> dtm-redis (compile)
+rm -f -rf rel/dtm_redis
+bin/rebar generate
+==> Entering directory `/home/eric/git/dtm-redis/lib'
+==> Leaving directory `/home/eric/git/dtm-redis/lib'
+==> Entering directory `/home/eric/git/dtm-redis/apps'
+==> Entering directory `/home/eric/git/dtm-redis/apps/dtm_redis'
+==> Leaving directory `/home/eric/git/dtm-redis/apps/dtm_redis'
+==> Leaving directory `/home/eric/git/dtm-redis/apps'
+==> Entering directory `/home/eric/git/dtm-redis/rel'
+==> rel (generate)
+==> Leaving directory `/home/eric/git/dtm-redis/rel'
+mkdir rel/dtm_redis/binlog
+rel/dtm_redis/bin/dtm_redis console
+Exec: /home/eric/git/dtm-redis/rel/dtm_redis/erts-5.9.1/bin/erlexec -boot /home/eric/git/dtm-redis/rel/dtm_redis/releases/0.4/dtm_redis -mode embedded -config /home/eric/git/dtm-redis/rel/dtm_redis/releases/0.4/sys.config -args_file /home/eric/git/dtm-redis/rel/dtm_redis/releases/0.4/vm.args -- console
+Root: /home/eric/git/dtm-redis/rel/dtm_redis
+Erlang R15B01 (erts-5.9.1) [source] [64-bit] [async-threads:0] [kernel-poll:false]
 
-starting storage bucket with pid <0.32.0> and storage "localhost":6379
-starting storage bucket with pid <0.33.0> and storage "localhost":6379
-starting transaction monitor with pid <0.34.0>
-starting shell session with pid <0.35.0>
-Eshell V5.8.3  (abort with ^G)
-1>
+
+=INFO REPORT==== 18-Feb-2013::13:40:29 ===
+starting dtm_redis application
+=INFO REPORT==== 18-Feb-2013::13:40:29 ===
+initializing dtm_redis_sup
+=INFO REPORT==== 18-Feb-2013::13:40:29 ===
+no mode specified for dtm_redis, assuming debug
+=INFO REPORT==== 18-Feb-2013::13:40:29 ===
+dtm_redis_sup starting in debug mode
+=INFO REPORT==== 18-Feb-2013::13:40:29 ===
+initializing txn_monitor_sup
+=INFO REPORT==== 18-Feb-2013::13:40:29 ===
+starting binlog with pid <0.51.0>, writing to file "binlog/monitor.log"
+=INFO REPORT==== 18-Feb-2013::13:40:29 ===
+starting txn_monitor with pid <0.52.0>
+=INFO REPORT==== 18-Feb-2013::13:40:29 ===
+initializing bucket_sup
+=INFO REPORT==== 18-Feb-2013::13:40:29 ===
+starting binlog with pid <0.54.0>, writing to file "binlog/bucket0.log"
+=INFO REPORT==== 18-Feb-2013::13:40:29 ===
+starting storage bucket with pid <0.55.0> and storage "localhost":6379
+=INFO REPORT==== 18-Feb-2013::13:40:29 ===
+connecting to redis "localhost":6379
+=INFO REPORT==== 18-Feb-2013::13:40:29 ===
+starting binlog with pid <0.58.0>, writing to file "binlog/bucket1.log"
+=INFO REPORT==== 18-Feb-2013::13:40:29 ===
+starting storage bucket with pid <0.59.0> and storage "localhost":6379
+=INFO REPORT==== 18-Feb-2013::13:40:29 ===
+connecting to redis "localhost":6379
+=INFO REPORT==== 18-Feb-2013::13:40:30 ===
+initializing session with pid <0.60.0>Eshell V5.9.1  (abort with ^G)
+(dtm_redis@eric-sandbox)1>
 </pre>
 
 Now you should be able to issue any of the supported commands directly in the erlang shell using the dtm_redis module like so:
 
 <pre>
-1> dtm_redis:set("foo", "bar").
-{ok,[ok]}
-2> dtm_redis:get("foo").
-{ok,[<<"bar">>]}
-3>
+(dtm_redis@eric-sandbox)1> dtm_redis:set(foo, bar).
+ok
+(dtm_redis@eric-sandbox)2> dtm_redis:get(foo).
+"bar"
+(dtm_redis@eric-sandbox)3>
 </pre>
 
 Starting a local test cluster
@@ -133,9 +188,9 @@ Benchmarking
 After starting any size cluster, the cluster can be benchmarked in a separate shell using dtm-bench:
 
 <pre>
-$ ./dtm-bench
+$ bin/dtm-bench
 usage: dtm-bench &lt;host:port[,host:port[,...]]&gt; &lt;clients&gt; &lt;time&gt; &lt;method&gt;
-$ ./dtm-bench localhost:6378 5 5 get_set
+$ bin/dtm-bench localhost:6378 5 5 get_set
 creating 5 clients connecting to each of 1 hosts
 starting clients
 clients running for 5 seconds
