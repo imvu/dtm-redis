@@ -34,25 +34,25 @@
 % public api
 
 -spec get(value()) -> display_value(). 
-get(Key) -> show_reply(session:call(shell, make_operation(<<"GET">>, Key))).
+get(Key) -> show_reply(session:call_shell(make_operation(<<"GET">>, Key))).
 
 -spec set(value(), value()) -> display_status().
-set(Key, Value) -> show_reply(session:call(shell, make_operation(<<"SET">>, Key, [Value]))).
+set(Key, Value) -> show_reply(session:call_shell(make_operation(<<"SET">>, Key, [Value]))).
 
 -spec delete(value()) -> display_integer().
-delete(Key) -> show_reply(session:call(shell, make_operation(<<"DEL">>, Key))).
+delete(Key) -> show_reply(session:call_shell(make_operation(<<"DEL">>, Key))).
 
 -spec watch(value()) -> display_status().
-watch(Key) -> show_reply(session:call(shell, make_operation(<<"WATCH">>, Key))).
+watch(Key) -> show_reply(session:call_shell(make_operation(<<"WATCH">>, Key))).
 
 -spec unwatch() -> display_status().
-unwatch() -> show_reply(session:call(shell, make_operation(<<"UNWATCH">>))).
+unwatch() -> show_reply(session:call_shell(make_operation(<<"UNWATCH">>))).
 
 -spec multi() -> display_status().
-multi() -> show_reply(session:call(shell, make_operation(<<"MULTI">>))).
+multi() -> show_reply(session:call_shell(make_operation(<<"MULTI">>))).
 
 -spec exec() -> display_multi().
-exec() -> show_reply(session:call(shell, make_operation(<<"EXEC">>))).
+exec() -> show_reply(session:call_shell(make_operation(<<"EXEC">>))).
 
 % private methods
 

@@ -51,6 +51,8 @@
 -type parse_state() :: none | #partial_status{} | #partial_error{} | #partial_integer{} | #partial_bulk{} | #partial_multi_bulk{}.
 -type parse_result() :: {partial, parse_state()} | {reply(), binary(), parse_state()}.
 
+-export_type([parse_state/0]).
+
 % Public API
 
 -spec make_binary(binary() | list() | integer() | atom()) -> binary().

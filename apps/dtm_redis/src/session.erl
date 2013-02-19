@@ -20,8 +20,9 @@
 
 -module(session).
 -behavior(gen_server).
--export([start_link/3]).
--export([call/2]).
+-behavior(ranch_protocol).
+-export([start_link/2, start_link/4]).
+-export([call_shell/1]).
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
 
 -include("protocol.hrl").
@@ -33,59 +34,66 @@
 }).
 
 -record(state, {
-    client :: none | shell | gen_tcp:socket(),
+    client :: none | shell | {module(), gen_tcp:socket(), redis_stream:parse_state()},
     txn_id=none :: none | txn_monitor:transaction_id(),
     buckets :: [#bucket{}],
     monitors :: [#monitor{}],
     transaction=none :: none | #transaction{},
-    watches=none :: none | set(),
-    stream
+    watches=none :: none | set()
 }).
 
 % API methods
 
-start_link(#buckets{}=Buckets, Monitors, shell) ->
-    gen_server:start_link({local, shell}, ?MODULE, #state{client=shell, buckets=Buckets, monitors=Monitors}, []);
-start_link(#buckets{}=Buckets, Monitors, Client) ->
-    gen_server:start_link(?MODULE, #state{client=Client, buckets=Buckets, monitors=Monitors, stream=redis_stream:init_request_stream()}, []).
+-spec start_link(#buckets{}, [#monitor{}]) -> {ok, pid()} | {error, any()}.
+start_link(Buckets, Monitors) ->
+    gen_server:start_link({local, shell}, ?MODULE, {Buckets, Monitors}, []).
 
--spec call(pid() | atom(), #operation{}) -> reply().
-call(Session, Operation) ->
-    gen_server:call(Session, Operation).
+-spec call_shell(#operation{}) -> reply().
+call_shell(Operation) ->
+    gen_server:call(shell, Operation).
+
+% ranch_protocol callbacks
+
+-spec start_link(pid(), any(), module(), {#buckets{}, [#monitor{}]}) -> {ok, pid()} | {error, any()}.
+start_link(ListenerPid, Socket, Transport, {Buckets, Monitors}) ->
+    gen_server:start_link(?MODULE, {ListenerPid, Socket, Transport, Buckets, Monitors}, []).
 
 % gen_server callbacks
 
-init(#state{}=State) ->
-    error_logger:info_msg("initializing session with pid ~p", [self()]),
-    {ok, State}.
+-spec init({pid(), any(), module(), #buckets{}, [#monitor{}]} | {#buckets{}, [#monitor{}]}) -> {ok, #state{}}.
+init({ListenerPid, Socket, Transport, Buckets, Monitors}) ->
+    State = #state{client={Transport, Socket, redis_stream:init_request_stream()}, buckets=Buckets, monitors=Monitors},
+    gen_server:cast(self(), {init_complete, ListenerPid}),
+    {ok, State};
+init({Buckets, Monitors}) ->
+    {ok, #state{client=shell, buckets=Buckets, monitors=Monitors}}.
 
+-spec handle_call(#operation{}, any(), #state{}) -> {reply, any(), #state{}} | {noreply, #state{}}.
 handle_call(#operation{}=Operation, _From, State) ->
-    handle_operation(State, Operation);
-handle_call(Message, From, _State) ->
-    error_logger:error_msg("session:handle_call unhandled message ~p from ~p", [Message, From]),
-    erlang:throw({error, unhandled}).
+    handle_operation(State, Operation).
 
-handle_cast(Message, _State) ->
-    error_logger:error_msg("session:handle_cast unhandled message ~p", [Message]),
-    erlang:throw({error, unhandled}).
+-spec handle_cast({init_complete, pid()}, #state{}) -> {noreply, #state{}}.
+handle_cast({init_complete, ListenerPid}, #state{client={Transport, Socket, _Stream}}=State) ->
+    ranch:accept_ack(ListenerPid),
+    Transport:setopts(Socket, [{active, once}]),
+    {noreply, State}.
 
-handle_info({tcp, Client, Data}, #state{client=Client}=State) ->
-    inet:setopts(Client, [{active, once}]),
+-spec handle_info({tcp, any(), binary()} | {tcp_closed, any()} | {tcp_error, any(), any()}, #state{}) -> {reply, any(), #state{}} | {noreply, #state{}} | {stop, any(), #state{}}.
+handle_info({tcp, Socket, Data}, #state{client={Transport, Socket, _Stream}}=State) ->
+    Transport:setopts(Socket, [{active, once}]),
     parse_request(State, Data);
-handle_info({tcp_closed, Client}, #state{client=Client}=State) ->
+handle_info({tcp_closed, Socket}, #state{client={_Transport, Socket, _Stream}}=State) ->
     {stop, normal, State};
-handle_info({tcp_error, Reason, Client}, #state{client=Client}=State) ->
+handle_info({tcp_error, Reason, Socket}, #state{client={_Transport, Socket, _Stream}}=State) ->
     error_logger:error_msg("stopping session because of tcp error ~p", [Reason]),
-    {stop, Reason, State};
-handle_info(Message, _State) ->
-    error_logger:error_msg("session:handle_info unhandled message ~p", [Message]),
-    erlang:throw({error, unhandled}).
+    {stop, Reason, State}.
 
+-spec terminate(any(), #state{}) -> #state{}.
 terminate(Reason, State) ->
     error_logger:info_msg("terminating session with reason ~p", [Reason]),
-    close(State),
-    ok.
+    close(State).
 
+-spec code_change(any(), #state{}, any()) -> {ok, #state{}}.
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
@@ -94,12 +102,12 @@ code_change(_OldVsn, State, _Extra) ->
 -spec parse_request(#state{}, binary()) -> {noreply, #state{}}.
 parse_request(State, <<>>) ->
     {noreply, State};
-parse_request(#state{stream=Parser}=State, Data) ->
+parse_request(#state{client={Transport, Socket, Parser}}=State, Data) ->
     case redis_stream:parse_request(Parser, Data) of
         {partial, NewParser} ->
-            {noreply, State#state{stream=NewParser}};
+            {noreply, State#state{client={Transport, Socket, NewParser}}};
         {Request, Remaining, NewParser} ->
-            {noreply, NewState} = handle_operation(State#state{stream=NewParser}, redis_command:parse_operation(Request)),
+            {noreply, NewState} = handle_operation(State#state{client={Transport, Socket, NewParser}}, redis_command:parse_operation(Request)),
             parse_request(NewState, Remaining)
     end.
 
@@ -165,8 +173,8 @@ handle_multi(#state{}=State) ->
 -spec send_response(#state{}, reply()) -> {reply, reply(), #state{}} | {noreply, #state{}}.
 send_response(#state{client=shell}=State, Reply) ->
     {reply, Reply, State};
-send_response(#state{client=Client}=State, Reply) ->
-    gen_tcp:send(Client, redis_stream:format_reply(Reply)),
+send_response(#state{client={Transport, Socket, _Stream}}=State, Reply) ->
+    Transport:send(Socket, redis_stream:format_reply(Reply)),
     {noreply, State}.
 
 handle_exec(#state{transaction=none}=State) ->
@@ -180,10 +188,14 @@ get_txn_id(#state{txn_id=none, monitors=Monitors}=State) ->
 get_txn_id(#state{txn_id=TransactionId}=State) ->
     {TransactionId, State}.
 
-close(#state{client=shell}) ->
-    ok;
-close(#state{client=Client}) ->
-    gen_tcp:close(Client).
+-spec close(#state{}) -> #state{}.
+close(#state{client=none}=State) ->
+    State;
+close(#state{client=shell}=State) ->
+    State;
+close(#state{client={Transport, Socket, _Stream}}=State) ->
+    Transport:close(Socket),
+    State#state{client=none}.
 
 commit_transaction(TransactionId, Buckets) ->
     sets:fold(fun(Bucket, NotUsed) -> gen_server:cast(Bucket, #lock_transaction{txn_id=TransactionId}), NotUsed end, not_used, Buckets),

@@ -35,9 +35,7 @@ start_link(Servers) ->
 init(Servers) ->
     error_logger:info_msg("initializing server_sup", []),
     {ok, {{one_for_one, 0, 1},
-        lists:map(fun({local, Name, Server}) ->
-                {Name, {server, start_link, [Server]}, permanent, 5000, worker, [server]}
-            end, Servers)}}.
+        [{Name, {server, start_link, [Server]}, permanent, 5000, worker, [server]} || {local, Name, Server} <- Servers]}}.
 
 % internal functions
 
@@ -49,9 +47,7 @@ parse_servers(Servers) ->
     Result.
 
 local_servers(Servers) ->
-    lists:foldl(fun({local, _Name, _Server}=Server, Acc) -> [Server | Acc];
-                   ({remote, _Name, _Server}, Acc) -> Acc
-        end, [], Servers).
+    [Server || {Locality, _Name, _Server}=Server <- Servers, Locality =:= local].
 
 local_or_remote(#server{nodename=none}) ->
     local;

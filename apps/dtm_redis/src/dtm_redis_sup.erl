@@ -45,16 +45,14 @@ init_mode({ok, debug}) ->
     error_logger:info_msg("dtm_redis_sup starting in debug mode", []),
     {#buckets{}=Buckets, Monitors, Children} = debug_child_specs(),
     {ok, {{one_for_one, 5, 10}, Children ++ [
-        {shell, {session, start_link, [Buckets, Monitors, shell]}, permanent, 5000, worker, [session]}
+        {shell, {session, start_link, [Buckets, Monitors]}, permanent, 5000, worker, [session]}
     ]}};
 init_mode({ok, debug_server}) ->
     error_logger:info_msg("dtm_redis_sup starting in debug_server mode", []),
     {#buckets{}=Buckets, Monitors, Children} = debug_child_specs(),
-    ServerConfig = [#server{port=6378, nodename=node()}],
 
     {ok, {{one_for_one, 5, 10}, Children ++ [
-        {session_sup, {session_sup, start_link, [Buckets, Monitors]}, permanent, 5000, supervisor, [session_sup]},
-        {server_sup, {server_sup, start_link, [ServerConfig]}, permanent, 5000, worker, [server_sup]}
+        ranch:child_spec(debug_server, 5, ranch_tcp, [{port, 6378}], session, {Buckets, Monitors})
     ]}};
 init_mode({ok, master}) ->
     {ok, {{one_for_one, 5, 10}, [
