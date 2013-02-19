@@ -37,9 +37,9 @@ start_link(#server{}=Config) ->
 
 % gen_server callbacks
 
-init(#server{port=Port, backlog=Backlog}=Config) ->
+init(#server{port=Port}=Config) ->
     error_logger:info_msg("starting server with pid ~p listening on port ~p", [self(), Port]),
-    {ok, Listen} = gen_tcp:listen(Port, [binary, {backlog, Backlog}, {active, false} | iface(Config)]),
+    {ok, Listen} = gen_tcp:listen(Port, [binary, {active, false} | iface(Config)]),
     {ok, #state{listen=Listen}, 0}.
 
 handle_call(Message, From, _State) ->

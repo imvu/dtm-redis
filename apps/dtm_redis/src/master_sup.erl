@@ -18,33 +18,21 @@
 %% OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 %% SOFTWARE.
 
--record(bucket, {
-    nodename :: node(),
-    store_host :: inet:ip_address() | inet:hostname(),
-    store_port :: inet:port_number(),
-    binlog :: string()
-}).
+-module(master_sup).
+-behavior(supervisor).
+-export([start_link/0]).
+-export([init/1]).
 
--record(monitor, {nodename, binlog}).
+-include("dtm_redis.hrl").
 
--record(server, {
-    nodename :: node(),
-    port :: inet:port_number(),
-    iface :: all | inet:ip_address()
-}).
+-spec start_link() -> {ok, pid()} | {error, any()}.
+start_link() ->
+    {ok, Filename} = application:get_env(config),
+    {ok, [#config{}=Config]} = file:consult(Filename),
+    supervisor:start_link({local, ?MODULE}, ?MODULE, Config).
 
--record(buckets, {
-    bits :: non_neg_integer(),
-    map
-}).
-
--record(monitors, {
-    map
-}).
-
--record(config, {
-    servers :: [#server{}],
-    buckets :: [#bucket{}],
-    monitors :: [#monitor{}]
-}).
+-spec init(#config{}) -> {ok, {{supervisor:strategy(), non_neg_integer(), pos_integer()}, [supervisor:child_spec()]}}.
+init(#config{}=Config) ->
+    io:format("starting dtm-redis using configuration ~p~n", [Config]),
+    {ok, {{one_for_one, 5, 10}, []}}.
 

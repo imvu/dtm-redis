@@ -1,4 +1,4 @@
 #!/bin/bash
 
-erl -pa lib/eredis/ebin/ lib/erlymock/ebin/ boot start_clean -kernel inet_dist_listen_min 50000 inet_dist_listen_max 50009 -name redis -setcookie dtmredis -s dtm_redis server_start -extra config/cluster
+rel/dtm_redis/bin/dtm_redis start -dtm_redis mode master -dtm_redis config '\"/home/cit/git/dtm-redis/config/single\"'
 

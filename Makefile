@@ -46,10 +46,7 @@ bin/dtm-bench:
 	make -C dtm-bench
 
 clean:
-	${RM} apps/dtm_redis/.eunit/*
-	${RM} apps/dtm_redis/ebin/*.beam
-	${RM} -rf rel/dtm_redis*
-	make -C dtm-bench clean
+	${REBAR} clean
 
 debug: generate
 	rel/dtm_redis/bin/dtm_redis console
