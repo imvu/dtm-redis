@@ -37,7 +37,7 @@
 % API methods
 
 start_link(Name, Binlog, #bucket{}=Bucket) ->
-    gen_server:start_link({local, Name}, ?MODULE, [Name, Binlog, Bucket], []).
+    gen_server:start_link({global, Name}, ?MODULE, [Name, Binlog, Bucket], []).
 
 % gen_server callbacks
 

@@ -1,9 +1,11 @@
 % see config/simple for field descriptions
-{config, false, [
+{config, [
+    {server, none, 6378, all}
+], [
     {bucket, none, "host1", 6379, "/tmp/dtm-redis.bucket1.log"},
     {bucket, none, "host2", 6379, "/tmp/dtm-redis.bucket2.log"},
     {bucket, none, "host3", 6379, "/tmp/dtm-redis.bucket3.log"},
     {bucket, none, "host4", 6379, "/tmp/dtm-redis.bucket4.log"}
 ], [
     {monitor, none, "/tmp/dtm-redis.monitor.log"}
-], all, 6378, 100}.
+]}.

@@ -1,9 +1,9 @@
 {config,
 [
-    {server, redis@host1, {192,168,0,1}, 6379, 100},
-    {server, redis@host2, {192,168,0,2}, 6379, 100},
-    {server, redis@host3, {192,168,0,3}, 6379, 100},
-    {server, redis@host4, {192,168,0,4}, 6379, 100}
+    {server, redis@host1, 6379, {192,168,0,1}},
+    {server, redis@host2, 6379, {192,168,0,2}},
+    {server, redis@host3, 6379, {192,168,0,3}},
+    {server, redis@host4, 6379, {192,168,0,4}}
 ],
 [
     {bucket, redis@host1, {127,0,0,1}, 6379, "/tmp/dtm-redis.bucket1.log"},

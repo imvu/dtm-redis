@@ -122,11 +122,11 @@ handle_operation(State, #operation{command= <<"EXEC">>}) ->
     handle_exec(State);
 handle_operation(#state{transaction=none, buckets=Buckets}=State, #operation{key=Key}=Operation) ->
     Bucket = hash:worker_for_key(Key, Buckets),
-    Response = gen_server:call(Bucket, #command{session_id=self(), operation=Operation}),
+    Response = gen_server:call({global, Bucket}, #command{session_id=self(), operation=Operation}),
     send_response(State, Response);
 handle_operation(#state{txn_id=TransactionId, transaction=#transaction{current=CurrentOp}=Transaction}=State, #operation{key=Key}=Operation) ->
     Bucket = hash:worker_for_key(Key, State#state.buckets),
-    Response = gen_server:call(Bucket, #transact{txn_id=TransactionId, session_id=self(), operation_id=CurrentOp, operation=Operation}),
+    Response = gen_server:call({global, Bucket}, #transact{txn_id=TransactionId, session_id=self(), operation_id=CurrentOp, operation=Operation}),
     Buckets = sets:add_element(Bucket, Transaction#transaction.buckets),
     NewTransaction = Transaction#transaction{current=CurrentOp + 1, buckets=Buckets},
     send_response(State#state{transaction=NewTransaction}, Response);
@@ -136,7 +136,7 @@ handle_operation(State, #redis_error{}=Error) ->
 handle_watch(State, Key) ->
     {TransactionId, NewState} = get_txn_id(State),
     Bucket = hash:worker_for_key(Key, NewState#state.buckets),
-    ok = gen_server:call(Bucket, #watch{txn_id=TransactionId, session_id=self(), key=Key}),
+    ok = gen_server:call({global, Bucket}, #watch{txn_id=TransactionId, session_id=self(), key=Key}),
     send_response(NewState#state{watches=add_watch(NewState#state.watches, Bucket)}, #redis_status{message= <<"OK">>}).
 
 add_watch(none, Bucket) ->
@@ -152,7 +152,7 @@ send_unwatch(#state{watches=none}) ->
     ok;
 send_unwatch(#state{watches=Watches}=State) ->
     {TransactionId, _State} = get_txn_id(State),
-    sets:fold(fun(Bucket, NotUsed) -> gen_server:cast(Bucket, #unwatch{txn_id=TransactionId, session=self()}), NotUsed end, not_used, Watches),
+    sets:fold(fun(Bucket, NotUsed) -> gen_server:cast({global, Bucket}, #unwatch{txn_id=TransactionId, session=self()}), NotUsed end, not_used, Watches),
     loop_unwatch(Watches, sets:size(Watches)).
 
 loop_unwatch(_, 0) ->
@@ -198,14 +198,14 @@ close(#state{client={Transport, Socket, _Stream}}=State) ->
     State#state{client=none}.
 
 commit_transaction(TransactionId, Buckets) ->
-    sets:fold(fun(Bucket, NotUsed) -> gen_server:cast(Bucket, #lock_transaction{txn_id=TransactionId}), NotUsed end, not_used, Buckets),
+    sets:fold(fun(Bucket, NotUsed) -> gen_server:cast({global, Bucket}, #lock_transaction{txn_id=TransactionId}), NotUsed end, not_used, Buckets),
     case loop_transaction_lock(Buckets, sets:size(Buckets), false) of
         error ->
-            sets:fold(fun(Bucket, NotUsed) -> gen_server:cast(Bucket, #rollback_transaction{txn_id=TransactionId}), NotUsed end, not_used, Buckets),
+            sets:fold(fun(Bucket, NotUsed) -> gen_server:cast({global, Bucket}, #rollback_transaction{txn_id=TransactionId}), NotUsed end, not_used, Buckets),
             #redis_bulk{content=none};
         ok ->
             txn_monitor:persist(TransactionId, Buckets),
-            sets:fold(fun(Bucket, NotUsed) -> gen_server:cast(Bucket, #commit_transaction{txn_id=TransactionId}), NotUsed end, not_used, Buckets),
+            sets:fold(fun(Bucket, NotUsed) -> gen_server:cast({global, Bucket}, #commit_transaction{txn_id=TransactionId}), NotUsed end, not_used, Buckets),
             loop_transaction_commit(Buckets, [], sets:size(Buckets))
     end.
 

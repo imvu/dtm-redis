@@ -1,9 +1,11 @@
 % see config/simple for field descriptions
-{config, false, [
+{config, [
+    {server, none, "localhost", 6378, all}
+], [
     {bucket, one@host1, "localhost", 6379, "/tmp/dtm-redis.bucket1.log"},
     {bucket, two@host2, "localhost", 6379, "/tmp/dtm-redis.bucket2.log"},
     {bucket, three@host3, "localhost", 6379, "/tmp/dtm-redis.bucket3.log"},
     {bucket, four@host4, "localhost", 6379, "/tmp/dtm-redis.bucket4.log"}
 ], [
     {monitor, none, "/tmp/dtm-redis.monitor.log"}
-], all, 6378, 100}.
+]}.

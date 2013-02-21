@@ -20,22 +20,25 @@
 
 -module(server_sup).
 -behavior(supervisor).
--export([start_link/1]).
+-export([start_link/2]).
 -export([init/1]).
 
 -include("dtm_redis.hrl").
 
 % API methods
 
-start_link(Servers) ->
-    supervisor:start_link({local, ?MODULE}, ?MODULE, local_servers(parse_servers(Servers))).
+-spec start_link([#server{}], {#buckets{}, [#monitor{}]}) -> {ok, pid()} | {error, any()}.
+start_link(Servers, Args) ->
+    supervisor:start_link({local, ?MODULE}, ?MODULE, {local_servers(parse_servers(Servers)), Args}).
 
 % supervisor callbacks
 
-init(Servers) ->
+-spec init({[#server{}], {#buckets{}, [#monitor{}]}}) -> {ok, {{supervisor:strategy(), non_neg_integer(), pos_integer()}, [supervisor:child_spec()]}}.
+init({Servers, {Buckets, Monitors}}) ->
     error_logger:info_msg("initializing server_sup", []),
     {ok, {{one_for_one, 0, 1},
-        [{Name, {server, start_link, [Server]}, permanent, 5000, worker, [server]} || {local, Name, Server} <- Servers]}}.
+        [ranch:child_spec(Name, 5, ranch_tcp, transport_opts(Server), session, {Buckets, Monitors}) || {local, Name, Server} <- Servers]
+    }}.
 
 % internal functions
 
@@ -56,6 +59,16 @@ local_or_remote(#server{nodename=Node}) when (Node == node()) ->
 local_or_remote(#server{}) ->
     remote.
 
+-spec transport_opts(#server{}) -> [any()].
+transport_opts(#server{port=Port}=Server) ->
+    transport_opts(Server, [{port, Port}]).
+
+-spec transport_opts(#server{}, [any()]) -> [any()].
+transport_opts(#server{iface=all}, Opts) ->
+    Opts;
+transport_opts(#server{iface=Interface}, Opts) ->
+    [{ip, Interface} | Opts].
+
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
 
@@ -75,6 +88,12 @@ local_or_remote_same_node_test() ->
 
 local_or_remote_different_node_test() ->
     remote = local_or_remote(#server{nodename=other_node}).
+
+transport_opts_port_only_test() ->
+    [{port, 1234}] = transport_opts(#server{nodename=none, port=1234, iface=all}).
+
+transport_opts_port_and_iface_test() ->
+    [{ip, {1, 2, 3, 4}}, {port, 1234}] = transport_opts(#server{nodename=none, port=1234, iface={1, 2, 3, 4}}).
 
 -endif.
 

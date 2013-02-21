@@ -18,19 +18,28 @@
 %% OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 %% SOFTWARE.
 
+-record(server, {
+    nodename :: none | node(),
+    port :: inet:port_number(),
+    iface :: all | inet:ip_address()
+}).
+
 -record(bucket, {
-    nodename :: node(),
+    nodename :: none | node(),
     store_host :: inet:ip_address() | inet:hostname(),
     store_port :: inet:port_number(),
     binlog :: string()
 }).
 
--record(monitor, {nodename, binlog}).
+-record(monitor, {
+    nodename :: none | node(),
+    binlog :: string()
+}).
 
--record(server, {
-    nodename :: node(),
-    port :: inet:port_number(),
-    iface :: all | inet:ip_address()
+-record(config, {
+    servers :: [#server{}],
+    buckets :: [#bucket{}],
+    monitors :: [#monitor{}]
 }).
 
 -record(buckets, {
@@ -40,11 +49,5 @@
 
 -record(monitors, {
     map
-}).
-
--record(config, {
-    servers :: [#server{}],
-    buckets :: [#bucket{}],
-    monitors :: [#monitor{}]
 }).
 

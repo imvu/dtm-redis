@@ -30,10 +30,12 @@ ERTS_VSN=${START_ERL% *}
 APP_VSN=${START_ERL#* }
 
 # Use releases/VSN/vm.args if it exists otherwise use etc/vm.args
-if [ -e "$RUNNER_BASE_DIR/releases/$APP_VSN/vm.args" ]; then
-    VMARGS_PATH="$RUNNER_BASE_DIR/releases/$APP_VSN/vm.args"
-else
-    VMARGS_PATH="$RUNNER_ETC_DIR/vm.args"
+if [ "$VMARGS_PATH" == "" ]; then
+    if [ -e "$RUNNER_BASE_DIR/releases/$APP_VSN/vm.args" ]; then
+        VMARGS_PATH="$RUNNER_BASE_DIR/releases/$APP_VSN/vm.args"
+    else
+        VMARGS_PATH="$RUNNER_ETC_DIR/vm.args"
+    fi
 fi
 
 # Use releases/VSN/sys.config if it exists otherwise use etc/app.config

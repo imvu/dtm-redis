@@ -42,7 +42,7 @@ find_shell(Node) ->
     find_shell(Node, 10).
 
 find_shell(Node, 0) ->
-    io:format("Unable to location shell on node ~p", [Node]),
+    io:format("Unable to locate shell on node ~p", [Node]),
     halt(1);
 find_shell(Node, N) ->
     case rpc:call(Node, erlang, whereis, [shell]) of

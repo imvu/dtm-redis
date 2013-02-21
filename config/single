@@ -1,23 +1,20 @@
 % Config record format is:
 %  config: record identifier
 %  servers: shell for erlang interactive shell, otherwise list of server records
-%    server: record identifier
-%    interface: all for all network interfaces, {X,X,X,X}, or "X.X.X.X"
+%    nodename: identifier of node in erlang cluster (name@host) - none for local node
 %    port: port number to listen on for connections
-%    backlog: number of waiting tcp sockets in the backlog
+%    interface: all for all network interfaces, {X,X,X,X}, or "X.X.X.X"
 %  buckets: list of bucket records
-%    bucket: record identifier
 %    nodename: identifier of node in erlang cluster (name@host) - none for local node
 %    store_host: hostname of redis storage instance
 %    store_port: port of redis storage instance
 %    binlog: path to binlog file
 %  monitors: list of monitor records
-%    monitor: record identifier
 %    nodename: identifier of node in erlang cluster (name@host) - none for local node
 %    binlog: path to binlog file
-{config,
-[
-    {server, none, all, 6378, 100}
+
+{config, [
+    {server, none, 6378, all}
 ], [
     {bucket, none, "localhost", 6379, "/tmp/dtm-redis.bucket.log"}
 ], [
