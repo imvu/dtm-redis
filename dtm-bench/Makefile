@@ -18,43 +18,23 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-REBAR = bin/rebar
+.SUFFIXES: .c .o
 
-all: test-all bin/dtm-bench
+CC = gcc
+CFLAGS = -std=gnu99 -g -O2 -fPIC -I../lib/hiredis2/
+LFLAGS = -lpthread -lrt
+COMPILE = $(CC) $(CFLAGS)
 
-test: test-unit
+all: compile
 
-test-all: test-unit test-acceptance
+compile: ../bin/dtm-bench
 
-test-unit:
-	${REBAR} eunit skip_deps=true
+%.o : %.c
+	$(CC) $(CFLAGS) -c $<
 
-test-acceptance: generate
-	rel/dtm_redis/bin/dtm_redis start
-	bin/acceptance.escript dtm_redis@`hostname`
-	rel/dtm_redis/bin/dtm_redis stop
-
-build:
-	${REBAR} compile
-
-generate: build
-	${RM} -rf rel/dtm_redis
-	${REBAR} generate
-	mkdir rel/dtm_redis/binlog
-
-bin/dtm-bench:
-	make -C lib/hiredis2
-	make -C dtm-bench
+../bin/dtm-bench: dtm-bench.o
+	$(CC) $(LFLAGS) dtm-bench.o ../lib/hiredis2/libhiredis.a -o ../bin/dtm-bench
 
 clean:
-	${REBAR} clean
-
-debug: generate
-	rel/dtm_redis/bin/dtm_redis console
-
-debug-server: generate
-	rel/dtm_redis/bin/dtm_redis start -dtm_redis mode debug_server
-
-stop:
-	rel/dtm_redis/bin/dtm_redis stop
+	${RM} dtm-bench.o ../bin/dtm-bench
 

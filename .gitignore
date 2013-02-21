@@ -2,8 +2,8 @@
 *.dump
 
 # Compiled dtm-bench binaries
-*.o
-dtm-bench
+dtm-bench/*.o
+bin/dtm-bench
 
 # Directory used for testing
 binlog/

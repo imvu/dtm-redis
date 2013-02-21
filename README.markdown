@@ -19,7 +19,8 @@ $ git clone https://github.com/imvu/dtm-redis
 $ cd dtm-redis
 $ git submodule init
 $ git submodule update
-$ make
+$ bin/rebar get-deps
+$ make all
 </pre>
 
 Running Tests
