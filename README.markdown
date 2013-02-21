@@ -125,7 +125,7 @@ ok
 Starting a local test cluster
 =============================
 
-The following command will start a single host dtm-redis cluster using the configuration in config/single:
+The following command will start a single host dtm-redis cluster with two buckets, one monitor, and one server listening on port 6378:
 
 <pre>
 $ make debug_server
@@ -145,24 +145,30 @@ redis>
 Running a distributed cluster
 =============================
 
-The config/ directory contains some default cluster configuration files. The config/single file contains documentation for the layout of the cluster configuration. config/single is also the configuration used by "make debug_server". The file config/cluster contains the configuration for running a 4-host cluster with 32 buckets and one listening server and one monitor per host. The hosts in the cluster operate in a master/slave configuration. The only real difference between master and slave is that the startup script is run on the master. The startup script reads the configuration and starts the dtm-redis remote processes on the slaves.
+The config/ directory contains some default cluster configuration files. The config/single file contains documentation for the layout of the cluster configuration. config/single is basically equivalent to the configuration used by "make debug-server" except that it has just one bucket rather than two used by debug-server. The file config/cluster contains the configuration for running a 4-host cluster with 32 buckets and one listening server and one monitor per host.
 
-On each slave host that will participate in the cluster, run the following command:
+For now, in order to run a multi-host cluster, the configuration file needs to be manually copied to each host. If running multiple nodes on the same host, the default startup options will try to use the vm.args file defined in rel/files/vm.args (in fact, a copy of this file created by rebar). This file can be overridden before starting dtm-redis by setting the environment variable VMARGS_PATH like so:
 
 <pre>
-$ slave.sh
+$ export VMARGS_PATH=/path/to/some/custom/vm.args
 </pre>
 
-On the master, edit master.sh and change the path to the configuration file (if you don't want it to be config/cluster). Otherwise, edit config/cluster and replace the placeholder hostnames (host1, host2, etc.) with the names of the hosts that will participate in the cluster. Also, you will want to configure the host and port for the redis backing store instances. The default cluster configuration uses the standard redis port (6379) on different localhost addresses (127.0.0.X). The localhost address is relative to the host where the bucket process is running. Then run the command:
+For each node in the cluster, start dtm-redis from the root dtm-redis folder using the cluster.sh bash script provided in the bin/ folder:
 
 <pre>
-$ master.sh
+$ bin/cluster.sh
 </pre>
 
-Now from a separate shell (on any host) connect to the dtm-redis cluster like so:
+The default config file used by the script is config/single. To use a different config file, specify it as the first parater:
 
 <pre>
-$ redis-cli -h host1 -p 6379
+$ bin/cluster.sh /path/to/custom/config
+</pre>
+
+To test it, from a shell (on any host) connect to the dtm-redis cluster using redis-cli like so:
+
+<pre>
+$ redis-cli -h &lt;hostname&gt; -p &lt;port&gt;
 redis> set foo bar
 1) OK
 redis> get foo
