@@ -20,39 +20,51 @@
 
 REBAR = bin/rebar
 
-all: test-all bin/dtm-bench
+compile:
+	${REBAR} compile
 
-test: test-unit
+generate: compile
+	${RM} -rf rel/dtm_redis
+	${REBAR} generate
 
-test-all: test-unit test-acceptance
+binlog: generate
+	mkdir rel/dtm_redis/binlog
 
-test-unit:
+build: generate binlog
+
+lib/hiredis2/libhiredis.a:
+	make -C lib/hiredis2
+
+hiredis: lib/hiredis2/libhiredis.a
+
+bin/dtm-bench: hiredis
+	make -C dtm-bench
+
+dtm-bench: bin/dtm-bench
+
+all: build dtm-bench
+
+clean:
+	${REBAR} clean
+	make -C lib/hiredis2 clean
+	make -C dtm-bench clean
+
+test-unit: compile
 	${REBAR} eunit skip_deps=true
 
-test-acceptance: generate
+test-acceptance: build
 	rel/dtm_redis/bin/dtm_redis start
 	bin/acceptance.escript dtm_redis@`hostname`
 	rel/dtm_redis/bin/dtm_redis stop
 
-build:
-	${REBAR} compile
+test-all: test-acceptance test-unit
 
-generate: build
-	${RM} -rf rel/dtm_redis
-	${REBAR} generate
-	mkdir rel/dtm_redis/binlog
+test: test-unit
 
-bin/dtm-bench:
-	make -C lib/hiredis2
-	make -C dtm-bench
-
-clean:
-	${REBAR} clean
-
-debug: generate
+debug: build
 	rel/dtm_redis/bin/dtm_redis console
 
-debug-server: generate
+debug-server: build
 	rel/dtm_redis/bin/dtm_redis start -dtm_redis mode debug_server
 
 stop:
