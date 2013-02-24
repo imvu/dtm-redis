@@ -1,13 +1,12 @@
 -module(fake_redis).
 -behavior(gen_server).
--export([start_link/0, port/0, stop/0]).
+-export([start_link/1]).
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
 
 -include("protocol.hrl").
 
 -record(state, {
     listener :: gen_tcp:socket(),
-    port :: inet:port_number(),
     keys :: dict(),
     client :: none | gen_tcp:socket(),
     stream :: none | redis_stream:parse_state()
@@ -15,32 +14,21 @@
 
 % Public API
 
--spec start_link() -> {ok, pid()} | {error, any()}.
-start_link() ->
-    gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
-
--spec port() -> inet:port_number().
-port() ->
-    gen_server:call(?MODULE, port).
-
--spec stop() -> no_return().
-stop() ->
-    gen_server:call(?MODULE, stop).
+-spec start_link(gen_tcp:socket()) -> {ok, pid()} | {error, any()}.
+start_link(Listener) ->
+    gen_server:start_link(?MODULE, Listener, []).
 
 % gen_server callbacks
 
--spec init([]) -> {ok, #state{}}.
-init([]) ->
-    {ok, Listener} = gen_tcp:listen(0, [binary, {packet, raw}]),
-    {ok, Port} = inet:port(Listener),
+-spec init(gen_tcp:socket()) -> {ok, #state{}}.
+init(Listener) ->
     accept(),
-    {ok, #state{listener=Listener, port=Port, keys=dict:new(), client=none, stream=none}}.
+    {ok, #state{listener=Listener, keys=dict:new(), client=none, stream=none}}.
 
--spec handle_call(port | stop, any(), #state{}) -> {reply, any(), #state{}} | {noreply, #state{}}.
-handle_call(port, _From, #state{port=Port}=State) ->
-    {reply, Port, State};
-handle_call(stop, _FROM, State) ->
-    {stop, normal, State}.
+-spec handle_call(any(), any(), #state{}) -> {stop, unhandled, #state{}}.
+handle_call(Message, From, State) ->
+    error_logger:error_msg("unhandled message ~p from ~p", [Message, From]),
+    {stop, unhandled, State}.
 
 -spec handle_cast(accept, #state{}) -> {noreply, #state{}} | {stop, any(), #state{}}.
 handle_cast(accept, #state{listener=Listener}=State) ->
@@ -117,15 +105,7 @@ normalize_request(#redis_multi_bulk{items=[#redis_bulk{content=Command} | Rest]}
 -include_lib("eunit/include/eunit.hrl").
 
 fake_state() ->
-    #state{listener=fake_listener, port=fake_port, keys=dict:new(), client=none, stream=none}.
-
-handle_call_port_test() ->
-    State = fake_state(),
-    {reply, fake_port, State} = handle_call(port, fake_from, State).
-
-handle_call_stop_test() ->
-    State = fake_state(),
-    {stop, normal, State} = handle_call(stop, fake_from, State).
+    #state{listener=fake_listener, keys=dict:new(), client=none, stream=none}.
 
 handle_tcp_empty_test() ->
     State = fake_state(),

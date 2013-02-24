@@ -55,14 +55,16 @@ init([]) ->
 
 -spec init_mode(atom()) -> [supervisor:child_spec()] | {error, any()}.
 init_mode(debug) ->
-    DebugConfig = debug_config(),
+    {FakeRedisPort, FakeRedis} = debug_redis_stores(),
+    DebugConfig = debug_config(FakeRedisPort),
     {Buckets, Monitors, Children} = init_config(DebugConfig#config{servers=[]}),
-    Children ++ [
+    FakeRedis ++ Children ++ [
         {shell, {session, start_link, [Buckets, Monitors]}, permanent, 5000, worker, [session]}
     ];
 init_mode(debug_server) ->
-    {_Buckets, _Monitors, Children} = init_config(debug_config()),
-    Children;
+    {FakeRedisPort, FakeRedis} = debug_redis_stores(),
+    {_Buckets, _Monitors, Children} = init_config(debug_config(FakeRedisPort)),
+    FakeRedis ++ Children;
 init_mode(cluster) ->
     case application:get_env(config) of
         undefined -> {error, config_not_specified};
@@ -108,11 +110,20 @@ init_config(#config{servers=ServerConfig, buckets=BucketConfig, monitors=Monitor
 
     {Buckets, Monitors, Children}.
 
--spec debug_config() -> #config{}.
-debug_config() ->
+-spec debug_redis_stores() -> {gen_tcp:port_number(), [supervisor:child_spec()]}.
+debug_redis_stores() ->
+    {ok, Listener} = gen_tcp:listen(0, [binary, {packet, raw}]),
+    {ok, Port} = inet:port(Listener),
+    {Port, [
+        {fake_redis0, {fake_redis, start_link, [Listener]}, permanent, 5000, worker, [fake_redis]},
+        {fake_redis1, {fake_redis, start_link, [Listener]}, permanent, 5000, worker, [fake_redis]}
+    ]}.
+
+-spec debug_config(inet:port_number()) -> #config{}.
+debug_config(Port) ->
     MonitorConfig = [#monitor{nodename=none, binlog="binlog/monitor.log"}],
 
-    Bucket = #bucket{nodename=none, store_host="localhost", store_port=6379},
+    Bucket = #bucket{nodename=none, store_host="localhost", store_port=Port},
     BucketConfig = [Bucket#bucket{binlog="binlog/bucket0.log"}, Bucket#bucket{binlog="binlog/bucket1.log"}],
 
     ServerConfig = [#server{nodename=none, port=6378, iface=all}],
@@ -122,31 +133,30 @@ debug_config() ->
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
 
-init_debug_mode_test() ->
-    [
-        TxnMonSupChild, BucketSupChild, ServerSupChild, ClusterChild, ShellChild
-    ] = init_mode(debug),
-    {txn_monitor_sup, {txn_monitor_sup, start_link, [[#monitor{}]]}, _, _, _, _} = TxnMonSupChild,
-    {bucket_sup, {bucket_sup, start_link, [[#bucket{}, #bucket{}]]}, _, _, _, _} = BucketSupChild,
-    {server_sup, {server_sup, start_link, [[], {#buckets{}, [txn_monitor0]}]}, _, _, _, _} = ServerSupChild,
-    {cluster, {cluster, start_link, _}, _, _, _, _} = ClusterChild,
-    {shell, {session, start_link, [#buckets{}, [txn_monitor0]]}, _, _, _, _} = ShellChild.
+init_config_test() ->
+    ServerConfig = [
+        #server{nodename=node(), port=1234, iface=all},
+        #server{nodename=othernode, port=5678, iface=all}
+    ],
+    BucketConfig = [
+        #bucket{nodename=othernode, store_host="otherhost", store_port=8765, binlog="otherbucketbin.log"},
+        #bucket{nodename=node(), store_host="thishost", store_port=4321, binlog="thisbucketbin.log"}
+    ],
+    MonitorConfig = [
+        #monitor{nodename=node(), binlog="thismonitorbin.log"},
+        #monitor{nodename=othernode, binlog="othermonitorbin.log"}
+    ],
+    {Buckets, Monitors, Children} = init_config(#config{servers=ServerConfig, buckets=BucketConfig, monitors=MonitorConfig}),
 
+    Buckets = #buckets{bits=1, map=bucket_sup:bucket_map(BucketConfig)},
 
-init_debug_server_test() ->
-    [
-        TxnMonSupChild, BucketSupChild, ServerSupChild, ClusterChild
-    ] = init_mode(debug_server),
-    {txn_monitor_sup, {txn_monitor_sup, start_link, [[#monitor{}]]}, _, _, _, _} = TxnMonSupChild,
-    {bucket_sup, {bucket_sup, start_link, [[#bucket{}, #bucket{}]]}, _, _, _, _} = BucketSupChild,
-    {server_sup, {server_sup, start_link, [[#server{}], {#buckets{}, [txn_monitor0]}]}, _, _, _, _} = ServerSupChild,
+    Monitors = [txn_monitor0],
+
+    [TxnMonSup, BucketSup, ServerSup, ClusterChild] = Children,
+    {txn_monitor_sup, {txn_monitor_sup, start_link, [MonitorConfig]}, _, _, _, _} = TxnMonSup,
+    {bucket_sup, {bucket_sup, start_link, [BucketConfig]}, _, _, _, _} = BucketSup,
+    {server_sup, {server_sup, start_link, [ServerConfig, {Buckets, Monitors}]}, _, _, _, _} = ServerSup,
     {cluster, {cluster, start_link, _}, _, _, _, _} = ClusterChild.
-
-init_cluster_test() ->
-    {error, config_not_specified} = init_mode(cluster).
-
-init_bad_mode_test() ->
-    {error, mode_not_supported} = init_mode(foo).
 
 -endif.
 
