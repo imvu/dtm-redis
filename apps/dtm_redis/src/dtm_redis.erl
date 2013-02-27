@@ -21,6 +21,7 @@
 -module(dtm_redis).
 -export([get/1, set/2, delete/1]).
 -export([watch/1, unwatch/0, multi/0, exec/0]).
+-export([show_reply/1]).
 
 -include("protocol.hrl").
 
@@ -54,22 +55,6 @@ multi() -> show_reply(session:call_shell(make_operation(<<"MULTI">>))).
 -spec exec() -> display_multi().
 exec() -> show_reply(session:call_shell(make_operation(<<"EXEC">>))).
 
-% private methods
-
--spec make_operation(binary()) -> #operation{}.
-make_operation(Command) ->
-    make_operation(Command, none).
-
--spec make_operation(binary(), value()) -> #operation{}.
-make_operation(Command, Key) ->
-    make_operation(Command, Key, []).
-
--spec make_operation(binary(), value() | none, [value()]) -> #operation{}.
-make_operation(Command, none, []) ->
-    #operation{command=Command, key=none, arguments=[]};
-make_operation(Command, Key, Arguments) ->
-    #operation{command=Command, key=redis_stream:make_binary(Key), arguments=[redis_stream:make_binary(Arg) || Arg <- Arguments]}.
-
 -spec show_reply(redis_simple() | #redis_multi_bulk{}) -> display_status() | display_integer() | display_value() | display_list() | display_multi().
 show_reply(#redis_status{message=Message}) ->
     status_to_atom(Message);
@@ -85,6 +70,22 @@ show_reply(#redis_multi_bulk{items=Items}) ->
     [show_reply(X) || X <- Items];
 show_reply(Replies) when is_list(Replies) ->
     [show_reply(X) || X <- Replies].
+
+% private methods
+
+-spec make_operation(binary()) -> #operation{}.
+make_operation(Command) ->
+    make_operation(Command, none).
+
+-spec make_operation(binary(), value()) -> #operation{}.
+make_operation(Command, Key) ->
+    make_operation(Command, Key, []).
+
+-spec make_operation(binary(), value() | none, [value()]) -> #operation{}.
+make_operation(Command, none, []) ->
+    #operation{command=Command, key=none, arguments=[]};
+make_operation(Command, Key, Arguments) ->
+    #operation{command=Command, key=redis_stream:make_binary(Key), arguments=[redis_stream:make_binary(Arg) || Arg <- Arguments]}.
 
 -spec status_to_atom(binary()) -> atom().
 status_to_atom(<<"OK">>) -> ok;

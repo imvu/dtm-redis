@@ -23,7 +23,7 @@
 
 main([Param]) when is_list(Param) ->
 	Node = list_to_atom(Param),
-    io:format("Starting dtm-redis acceptance tests running on ~p~n", [Node]),
+    io:format("Starting dtm-redis shell acceptance tests running on ~p~n", [Node]),
     find_shell(Node),
     Tests = [
         test_get_set(),

@@ -22,7 +22,7 @@
 
 -include("protocol.hrl").
 
--export([connect/3, send/3, send/4, recv/2]).
+-export([connect/3, close/1, send/3, send/4, recv/2]).
 
 % Types
 
@@ -65,6 +65,13 @@ connect(Host, Port, Timeout) ->
         {ok, Socket} -> {ok, init(Socket)};
         Error -> Error
     end.
+
+-spec close(redis_state()) -> redis_state().
+close(#redis_client_state{socket=none}=State) ->
+    State;
+close(#redis_client_state{socket=Socket}) ->
+    gen_tcp:close(Socket),
+    init(none).
 
 -spec send(command_id(), command(), redis_state()) -> {ok, redis_state()} | {error, inet:posix()}.
 send(Id, _Command, #redis_client_state{socket=Socket}=State) when is_atom(Socket) ->

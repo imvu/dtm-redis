@@ -54,7 +54,10 @@ test-unit: compile
 
 test-acceptance: build
 	rel/dtm_redis/bin/dtm_redis start
-	bin/acceptance.escript dtm_redis@`hostname`
+	bin/acceptance_shell.escript dtm_redis@`hostname`
+	rel/dtm_redis/bin/dtm_redis stop
+	rel/dtm_redis/bin/dtm_redis start -dtm_redis mode debug_server
+	bin/acceptance_server.escript dtm_redis@`hostname`
 	rel/dtm_redis/bin/dtm_redis stop
 
 test-all: test-acceptance test-unit
