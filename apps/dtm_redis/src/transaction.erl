@@ -44,7 +44,14 @@ execute(StartFun, ResultFun) ->
 -spec execute(operation(), list(), result_fun()) -> result().
 execute(StartFun, StartArgs, ResultFun) ->
     Result = try
-        perform(StartFun, StartArgs)
+        case perform(StartFun, StartArgs) of
+            {done, Res} -> Res;
+            {done, Res, Messages} ->
+                lists:foreach(fun({To, Message}) -> erlang:send(To, Message);
+                                 ({To, Message, Options}) -> erlang:send(To, Message, Options) end, Messages),
+                Res;
+            Other -> Other
+        end
     catch
         throw:Term -> {error, {throw, Term, erlang:get_stacktrace()}}
     end,
@@ -72,7 +79,9 @@ noreply(OldState, Timeout) ->
 perform(Operation, Args) ->
     case erlang:apply(Operation, Args) of
         {continue, {M, F, A}, Continue} -> perform(Continue, [erlang:apply(M, F, A)]);
-        {done, Result} -> Result;
+        {continue, {M, F, A}, Continue, Messages} -> perform(Continue, [erlang:apply(M, F, A), Messages]);
+        {done, _Result}=Done -> Done;
+        {done, _Result, _Messages}=Done -> Done;
         {error, _Reason}=Error -> Error
     end.
 
@@ -95,6 +104,12 @@ noreply_impl(ErrorFun) ->
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
 
+receive_message(Message) ->
+    ok = receive
+        Message -> ok
+    after 0 -> fail
+    end.
+
 execute_continue_with_args_test() ->
     Continue = fun([1, 2]) -> {done, {reply, result, new_state}} end,
     Start = fun(param) -> {continue, {lists, sort, [[2, 1]]}, Continue} end,
@@ -104,6 +119,18 @@ execute_continue_no_args_test() ->
     Continue = fun([1, 2]) -> {done, {reply, result, new_state}} end,
     Start = fun() -> {continue, {lists, sort, [[2, 1]]}, Continue} end,
     {reply, result, new_state} = execute(Start, reply(old_state)).
+
+execute_done_with_messages_test() ->
+    Start = fun() -> {done, {reply, result, new_state}, [{self(), message1}, {self(), message2}]} end,
+    {reply, result, new_state} = execute(Start, reply(old_state)),
+    receive_message(message1),
+    receive_message(message2).
+
+execute_done_with_messages_and_options_test() ->
+    Start = fun() -> {done, {reply, result, new_state}, [{self(), message1, [nosuspend]}, {self(), message2, [noconnect]}]} end,
+    {reply, result, new_state} = execute(Start, reply(old_state)),
+    receive_message(message1),
+    receive_message(message2).
 
 execute_error_with_args_test() ->
     Start = fun(param) -> {error, foobar} end,
