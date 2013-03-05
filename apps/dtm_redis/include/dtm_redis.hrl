@@ -44,7 +44,7 @@
 
 -record(buckets, {
     bits :: non_neg_integer(),
-    map
+    map :: dict()
 }).
 
 -record(monitors, {
