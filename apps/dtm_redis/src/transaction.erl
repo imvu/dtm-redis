@@ -20,20 +20,22 @@
 
 -module(transaction).
 
--export([execute/2, execute/3, reply/1, reply/2, noreply/1, noreply/2]).
+-export([execute/2, execute/3, reply/1, reply/2, noreply/1, noreply/2, ok/0]).
 
 % types
 
 -type continue() :: {continue, mfa(), operation()}.
 -type done() :: {done, any()}.
 -type error() :: {error, any()}.
--type operation() :: fun((any()) -> continue() | done() | error()).
+-type operation() :: fun((any()) -> continue() | done() | error()) | fun(() -> continue() | done() | error()).
 
 -type reply() :: {reply, any(), any()} | {reply, any(), any(), timeout() | hibernate}.
 -type noreply() :: {noreply, any()} | {noreply, any(), timeout() | hibernate}.
 -type stop() :: {stop, any(), any()} | {stop, any(), any(), any()}.
--type result() :: reply() | noreply() | stop().
--type result_fun() :: fun((any()) -> result()).
+-type ok() :: {ok, any()} | {ok, any(), timeout() | hibernate}.
+-type result() :: reply() | noreply() | stop() | ok().
+-type message() :: {pid() | atom(), any()} | {pid() | atom(), any(), [nosuspend | noconnect]}.
+-type result_fun() :: fun((any()) -> result()) | fun((any(), [message()]) -> result()).
 
 % Public API
 
@@ -53,7 +55,10 @@ execute(StartFun, StartArgs, ResultFun) ->
             Other -> Other
         end
     catch
-        throw:Term -> {error, {throw, Term, erlang:get_stacktrace()}}
+        throw:Term ->
+            Error = {throw, Term, erlang:get_stacktrace()},
+            error_logger:error_msg("exception in transaction: ~p", [Error]),
+            {error, Error}
     end,
     ResultFun(Result).
 
@@ -72,6 +77,13 @@ noreply(OldState) ->
 -spec noreply(any(), timeout() | hibernate) -> result_fun().
 noreply(OldState, Timeout) ->
     noreply_impl(fun({error, _Reason}=_Error) -> {noreply, OldState, Timeout} end).
+
+-spec ok() -> result_fun().
+ok() ->
+    fun({ok, _State}=Result) -> Result;
+       ({ok, _State, _Timeout}=Result) -> Result;
+       ({error, Reason}) -> {stop, Reason}
+    end.
 
 % Internal functions
 
@@ -177,6 +189,21 @@ reply_handles_error_without_timeout_test() ->
 
 reply_handles_error_with_timeout_test() ->
     {reply, {error, because}, old_state, 42} = (reply(old_state, 42))({error, because}).
+
+noreply_handles_error_without_timeout_test() ->
+    {noreply, old_state} = (noreply(old_state))({error, because}).
+
+noreply_handles_error_with_timeout_test() ->
+    {noreply, old_state, 42} = (noreply(old_state, 42))({error, because}).
+
+ok_handles_ok_test() ->
+    {ok, state} = (ok())({ok, state}).
+
+ok_handles_ok_with_timeout_test() ->
+    {ok, state, 42} = (ok())({ok, state, 42}).
+
+ok_handles_error_test() ->
+    {stop, because} = (ok())({error, because}).
 
 -endif.
 
